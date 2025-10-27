@@ -166,7 +166,16 @@ function Opportunities({ perms }) {
   const r = await fetch('/api/users-lookup?roles=OWNER,EMPLOYEE');
         const data = await r.json();
         if (!aborted && r.ok) {
-          setUserOptions(Array.isArray(data) ? data : []);
+          const list = Array.isArray(data) ? data : [];
+          setUserOptions(list);
+          // If no salesperson picked yet, default to the first available selectable user
+          if (!form.salesperson && list.length) {
+            const first = list.find(u => u && (u.full_name || u.username || u.email));
+            if (first) {
+              const label = first.full_name || first.username || first.email;
+              setForm(f => ({ ...f, salesperson: label }));
+            }
+          }
         } else if (!aborted) {
           setUserOptions([]);
           setUserOptionsError(data?.error || 'Failed to load users');
