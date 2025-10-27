@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "https://YOUR_BACKEND_URL/api/$1" }
+    { "source": "/api/(.*)", "destination": "https://sreenidhi-crm-backend.onrender.com/api/$1" }
   ]
 }
