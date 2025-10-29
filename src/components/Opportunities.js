@@ -939,7 +939,7 @@ function Opportunities({ perms }) {
               ].map(col => (
                 <th
                   key={col.key}
-                  style={{ cursor:'pointer', padding:'8px 10px', textAlign:'left', verticalAlign:'middle', whiteSpace:'nowrap' }}
+                  style={{ cursor:'pointer', padding:'8px 10px', textAlign:'left', verticalAlign:'middle', whiteSpace:'normal' }}
                   onClick={() => {
                   setSort(s => s.key === col.key ? { key: col.key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key: col.key, dir: 'asc' });
                 }}
@@ -950,7 +950,7 @@ function Opportunities({ perms }) {
                   </span>
                 </th>
               ))}
-              <th style={{ padding:'8px 10px', textAlign:'left', verticalAlign:'middle', whiteSpace:'nowrap' }}>Action</th>
+              <th style={{ padding:'8px 10px', textAlign:'left', verticalAlign:'middle', whiteSpace:'normal' }}>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -1028,12 +1028,14 @@ function Opportunities({ perms }) {
                     ) : '—'}
                   </td>
                   <td style={{ padding:'8px 10px', verticalAlign:'middle' }}>
-                    {can.edit && (
-                      <button className="btn" style={{background:'#f1c40f',color:'#222',marginRight:8}} onClick={() => handleEdit(o)}>Edit</button>
-                    )}
-                    {can.delete && (
-                      <button className="btn" style={{background:'#e74c3c',color:'#fff'}} onClick={() => handleDelete(o.opportunity_id)}>Delete</button>
-                    )}
+                    <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
+                      {can.edit && (
+                        <button className="btn" style={{background:'#f1c40f',color:'#222'}} onClick={() => handleEdit(o)}>Edit</button>
+                      )}
+                      {can.delete && (
+                        <button className="btn" style={{background:'#e74c3c',color:'#fff'}} onClick={() => handleDelete(o.opportunity_id)}>Delete</button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ));

@@ -28,7 +28,9 @@ header {
 }
 
 .wrap {
-  max-width: 1120px;
+  /* Use full viewport width to avoid horizontal scrolling for wide tables */
+  max-width: 100%;
+  width: 100%;
   margin: 0 auto;
   padding: 16px;
 }
@@ -115,6 +117,8 @@ table {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
+  /* Help columns shrink and text wrap instead of causing page scroll */
+  table-layout: fixed;
 }
 
 thead th {
@@ -122,11 +126,20 @@ thead th {
   text-align: left;
   padding: 8px 6px;
   border-bottom: 1px solid var(--border);
+  white-space: normal;
 }
 
 tbody td {
   padding: 8px 6px;
   border-top: 1px solid var(--border);
+  /* Allow content to wrap within cells */
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Prevent minor overflows from introducing page-wide horizontal scroll */
+html, body {
+  overflow-x: hidden;
 }
 
 .btn {
