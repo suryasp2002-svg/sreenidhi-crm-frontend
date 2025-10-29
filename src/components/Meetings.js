@@ -30,7 +30,8 @@ const STATUS_LIST = ['SCHEDULED','COMPLETED','CANCELLED','NO_SHOW','RESCHEDULED'
 export default function Meetings({ perms }) {
   // Filters and paging
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState(['SCHEDULED']);
+  // Default: show all statuses
+  const [status, setStatus] = useState([...STATUS_LIST]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [assignedTo, setAssignedTo] = useState('');
@@ -421,7 +422,8 @@ export default function Meetings({ perms }) {
   function printTable() {
     const html = document.getElementById('meetingsTable')?.outerHTML || '';
     const win = window.open('', '', 'height=700,width=900');
-    win.document.write('<html><head><title>Meetings</title><style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left;}th{background:#f5f5f5;}</style></head><body>');
+    win.document.write('<html><head><title>Meetings</title><style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left;}th{background:#f5f5f5;} .brand{display:flex;align-items:center;gap:10px;margin:8px 0 12px;} .brand img{border-radius:50%;object-fit:cover}</style></head><body>');
+    win.document.write('<div class="brand"><img src="/assets/branding/logo.png" alt="Logo" width="36" height="36"/><div style="font-weight:800">Sreenidhi CRM — Meetings</div></div>');
     win.document.write(html);
     win.document.write('</body></html>');
     win.document.close();
@@ -524,6 +526,22 @@ export default function Meetings({ perms }) {
   }
 
   const can = perms ? { create: !!perms?.actions?.['Meetings.create'], edit: !!perms?.actions?.['Meetings.edit'], delete: !!perms?.actions?.['Meetings.delete'] } : { create: true, edit: true, delete: true };
+  
+  // Assignment markers (consistent with Opportunities)
+  const CustomerIcon = ({ size = 20 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="10" fill="#111" opacity="0.08" />
+      <circle cx="12" cy="10" r="3.3" fill="#111" />
+      <path d="M5.5 18.4c1.7-3 4-4.4 6.5-4.4s4.8 1.4 6.5 4.4" fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+  const ContractIcon = ({ size = 20 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <rect x="5" y="3" width="11" height="18" rx="2" ry="2" fill="#111" opacity="0.08" stroke="#111" />
+      <path d="M8 7h6M8 10h6M8 13h4" stroke="#111" strokeWidth="2" strokeLinecap="round" />
+      <path d="M14.5 15.5l3.8 3.8-2.8.7.7-2.8-1.7-1.7z" fill="#111" />
+    </svg>
+  );
   return (
     <div>
       {error && <div style={{color:'red',padding:'8px'}}>{error}</div>}
@@ -569,8 +587,8 @@ export default function Meetings({ perms }) {
                   <div style={{padding:8}} className="muted">No matches</div>
                 ) : clientOptions.map(opt => (
                   <div key={`${opt.entity_type}-${opt.opportunity_id}-${opt.contract_id || opt.customer_id}`} style={{padding:'8px 10px',cursor:'pointer',display:'flex',gap:10,alignItems:'center'}} onMouseDown={() => chooseClient(opt)}>
-                    <span title={opt.contract_id ? 'CONTRACT' : 'OPPORTUNITY'} aria-label={opt.contract_id ? 'CONTRACT' : 'OPPORTUNITY'} style={{display:'inline-block',width:20,textAlign:'center'}}>
-                      {opt.contract_id ? '★' : '■'}
+                    <span title={opt.contract_id ? 'Contract' : 'Customer'} aria-label={opt.contract_id ? 'Contract' : 'Customer'} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:36}}>
+                      {opt.contract_id ? <ContractIcon size={32} /> : <CustomerIcon size={32} />}
                     </span>
                     <div>
                       <div style={{fontWeight:600}}>{opt.client_name}</div>
@@ -821,8 +839,8 @@ export default function Meetings({ perms }) {
         <table id="meetingsTable" style={{marginTop:8}}>
           <thead>
             <tr>
-              <th>Opportunity</th>
               <th>Client Name</th>
+              <th>Opportunity</th>
               <th>Subject</th>
               <th>Date & Time</th>
               <th>Location</th>
@@ -838,8 +856,13 @@ export default function Meetings({ perms }) {
               <tr><td colSpan={8} className="muted">No meetings</td></tr>
             ) : items.map(m => (
               <tr key={m.id}>
+                <td>
+                  <span title={m.contract_id ? 'Contract' : 'Customer'} aria-label={m.contract_id ? 'Contract' : 'Customer'} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:36,marginRight:8,verticalAlign:'middle'}}>
+                    {m.contract_id ? <ContractIcon size={32} /> : <CustomerIcon size={32} />}
+                  </span>
+                  {m.client_name || ''}
+                </td>
                 <td>{m.opportunity_id || ''}</td>
-                <td>{m.client_name || ''}</td>
                 <td>{m.subject}</td>
                 <td>{fmtDateTime(m.starts_at || m.when_ts)}</td>
                 <td>{m.location || ''}</td>

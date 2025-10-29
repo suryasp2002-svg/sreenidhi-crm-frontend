@@ -593,6 +593,7 @@ export default function Reminders({ perms }) {
           rightItems={filterByScope((liveMeetings.length ? liveMeetings.map(toMeetingItem) : meetingsData), rightScope)}
           leftScope={leftScope}
           rightScope={rightScope}
+          meetingLayout={'employee-my-overview'}
         />
       </Section>
 
@@ -608,6 +609,7 @@ export default function Reminders({ perms }) {
           onMarkDone={can.edit ? markReminderDone : undefined}
           onEdit={can.edit ? openEdit : undefined}
           onMarkFailed={can.edit ? markReminderFailed : undefined}
+          meetingLayout={'employee-my-overview'}
         />
       </Section>
 
@@ -623,6 +625,7 @@ export default function Reminders({ perms }) {
           onMarkDone={can.edit ? markEmailSent : undefined}
           onEdit={can.edit ? openEdit : undefined}
           onMarkFailed={can.edit ? markReminderFailed : undefined}
+          meetingLayout={'employee-my-overview'}
         />
       </Section>
         </>
@@ -700,6 +703,7 @@ export default function Reminders({ perms }) {
                       rightItems={filterByScope((empLiveMeetings.length ? empLiveMeetings.map(toMeetingItem) : []), rightScope)}
                       leftScope={leftScope}
                       rightScope={rightScope}
+                      meetingLayout={'employee-my-overview'}
                     />
                   </Section>
                   {/* Calls row (employee-scoped) */}
@@ -711,6 +715,7 @@ export default function Reminders({ perms }) {
                       rightItems={filterByScope(empLiveCalls.length ? empLiveCalls.map(toItem) : [], rightScope)}
                       leftScope={leftScope}
                       rightScope={rightScope}
+                      meetingLayout={'employee-my-overview'}
                     />
                   </Section>
                   {/* Emails row (employee-scoped) */}
@@ -722,6 +727,7 @@ export default function Reminders({ perms }) {
                       rightItems={filterByScope(empLiveEmails.length ? empLiveEmails.map(toItem) : [], rightScope)}
                       leftScope={leftScope}
                       rightScope={rightScope}
+                      meetingLayout={'employee-my-overview'}
                     />
                   </Section>
                 </>
@@ -790,6 +796,7 @@ export default function Reminders({ perms }) {
                       rightItems={filterByScope(asMeetings.map(toMeetingItem), rightScope)}
                       leftScope={leftScope}
                       rightScope={rightScope}
+                      meetingLayout={'employee-my-overview'}
                     />
                   </Section>
                   <Section title="Calls">
@@ -803,6 +810,7 @@ export default function Reminders({ perms }) {
                       onEdit={openEdit}
                       onMarkDone={markReminderDone}
                       onMarkFailed={markReminderFailed}
+                      meetingLayout={'employee-my-overview'}
                     />
                   </Section>
                   <Section title="Emails">
@@ -816,6 +824,7 @@ export default function Reminders({ perms }) {
                       onEdit={openEdit}
                       onMarkDone={markEmailSent}
                       onMarkFailed={markReminderFailed}
+                      meetingLayout={'employee-my-overview'}
                     />
                   </Section>
                 </>
@@ -983,16 +992,16 @@ function Section({ title, children }) {
   );
 }
 
-function TwoPanels({ leftTitle, rightTitle, leftItems, rightItems, leftScope, rightScope, onMarkDone, onMarkFailed, onEdit }) {
+function TwoPanels({ leftTitle, rightTitle, leftItems, rightItems, leftScope, rightScope, onMarkDone, onMarkFailed, onEdit, meetingLayout }) {
   return (
     <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
-      <Panel title={leftTitle} scopeKey={leftScope} items={leftItems} onMarkDone={onMarkDone} onMarkFailed={onMarkFailed} onEdit={onEdit} />
-      <Panel title={rightTitle} scopeKey={rightScope} items={rightItems} onMarkDone={onMarkDone} onMarkFailed={onMarkFailed} onEdit={onEdit} />
+      <Panel title={leftTitle} scopeKey={leftScope} items={leftItems} onMarkDone={onMarkDone} onMarkFailed={onMarkFailed} onEdit={onEdit} meetingLayout={meetingLayout} />
+      <Panel title={rightTitle} scopeKey={rightScope} items={rightItems} onMarkDone={onMarkDone} onMarkFailed={onMarkFailed} onEdit={onEdit} meetingLayout={meetingLayout} />
     </div>
   );
 }
 
-function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit }) {
+function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meetingLayout }) {
   const [, forceTick] = useState(0);
   useEffect(() => {
     // refresh every 30s so countdown badges update
@@ -1003,6 +1012,7 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit }) {
   const rangeText = scopeKey === 'today' || scopeKey === 'tomorrow'
     ? fmtDay(from)
     : `${fmtDay(from)} - ${fmtDay(to)}`;
+  const empMyOverviewLayout = meetingLayout === 'employee-my-overview';
 
   // Sort so active tasks appear first and completed (or terminal) statuses sink to the bottom.
   const sortedItems = useMemo(() => {
@@ -1042,80 +1052,215 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit }) {
         )}
         {sortedItems.map(it => (
           <div key={it.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', borderBottom:'1px solid #eef2f7'}}>
-            <div style={{flex:1, minWidth:0}}>
-              <div style={{fontWeight:600, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-                {(it.kind === 'CALL' || it.kind === 'EMAIL') ? (
-                  <Tooltip content={renderReminderTooltip(it)} delayShow={400} delayHide={120}>
-                    <span style={{cursor:'help'}}>{it.title}</span>
-                  </Tooltip>
-                ) : (
-                  <span>{it.title}</span>
-                )}
-                {it.kind === 'MEETING' && it.client_name ? (
-                  <span
-                    title="Client"
-                    style={{
-                      display:'inline-block',
-                      padding:'2px 8px',
-                      borderRadius:999,
-                      fontSize:11,
-                      fontWeight:800,
-                      background:'#fff7ed', // warm highlight
-                      color:'#7c2d12',
-                      border:'1px solid #fed7aa'
-                    }}
-                  >
-                    {it.client_name}
-                  </span>
-                ) : null}
-              </div>
-              <div style={{fontSize:12, color:'#6b7280', display:'flex', alignItems:'center', flexWrap:'wrap', gap:6}}>
+            {/* Left content area: media-row for Employee My Overview meetings; default for others */}
+            {empMyOverviewLayout && it.kind === 'MEETING' ? (
+              <div style={{flex:1, minWidth:0}}>
                 {(() => {
                   const f = fmtDateAndTime(it.when);
+                  const whenDate = asDate(it.when);
+                  const now = new Date();
+                  const isPast = whenDate < now;
+                  const badgeTimer = isPast
+                    ? { border:'1px solid #fecaca', background:'#fef2f2', color:'#991b1b' }
+                    : { border:'1px solid #e5e7eb', background:'#fff', color:'#374151' };
+                  const by = it.created_by_username || it.created_by_name || '';
                   return (
-                    <>
-                      <span style={{fontWeight:700, color:'#111'}}>{f.dateText}</span>
-                      <span style={{fontWeight:800, color:'#111', background:'#eef2ff', padding:'1px 6px', borderRadius:6}}>{f.timeText}</span>
-                      {it.kind === 'MEETING' ? (
-                        <>
-                          {it.assignee ? (
-                            <span title="Assigned To" style={{padding:'1px 6px', borderRadius:999, fontSize:11, fontWeight:700, background:'#eef2ff', color:'#3730a3', border:'1px solid #c7d2fe'}}>
-                              {it.assignee}
-                            </span>
-                          ) : null}
-                          {/* Assigned by chip when creator differs from assignee */}
-                          {(() => {
-                            const hasIds = it.created_by_user_id && it.assigned_to_user_id;
-                            const idsDiffer = hasIds && String(it.created_by_user_id) !== String(it.assigned_to_user_id);
-                            const labelsDiffer = !hasIds && it.created_by_name && it.assignee && String(it.created_by_name) !== String(it.assignee);
-                            return (idsDiffer || labelsDiffer) && it.created_by_name;
-                          })() ? (
-                            <span title="Assigned by" style={{padding:'1px 6px', borderRadius:999, fontSize:11, fontWeight:800, background:'#ecfeff', color:'#155e75', border:'1px solid #a5f3fc'}}>
-                              Assigned by {it.created_by_name}
-                            </span>
-                          ) : null}
-                        </>
-                      ) : (
-                        <>
-                          {it.who ? <span>{it.who}</span> : null}
-                          {(() => {
-                            const hasIds = it.created_by_user_id && it.assigned_to_user_id;
-                            const idsDiffer = hasIds && String(it.created_by_user_id) !== String(it.assigned_to_user_id);
-                            const labelsDiffer = !hasIds && it.created_by_name && it.assigned_to && String(it.created_by_name) !== String(it.assigned_to);
-                            return (idsDiffer || labelsDiffer) && it.created_by_name;
-                          })() ? (
-                            <span title="Assigned by" style={{padding:'1px 6px', borderRadius:999, fontSize:11, fontWeight:800, background:'#ecfeff', color:'#155e75', border:'1px solid #a5f3fc'}}>
-                              Assigned by {it.created_by_name}
-                            </span>
-                          ) : null}
-                        </>
-                      )}
-                    </>
+                    <div style={{display:'grid', gridTemplateColumns:'140px 1fr 200px', gap:12, alignItems:'stretch'}}>
+                      {/* Left: date + time on one line, then countdown */}
+                      <div style={{display:'flex', flexDirection:'column', gap:6, paddingRight:12, borderRight:'2px solid #d1d5db', height:'100%', justifyContent:'center'}}>
+                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                          <span style={{fontWeight:700, color:'#111', fontSize:12}}>{f.dateText}</span>
+                          <span style={{fontWeight:700, color:'#111', background:'#eef2ff', padding:'1px 6px', borderRadius:6, fontSize:12}}>{f.timeText}</span>
+                        </div>
+                        <div title={whenDate.toLocaleString()} style={{...badgeTimer, padding:'2px 8px', borderRadius:999, fontSize:11, width:'fit-content'}}>
+                          ⏱ {timeLeftLabel(it.when)}
+                        </div>
+                      </div>
+                      {/* Middle: client name and subject */}
+                      <div style={{minWidth:0, paddingRight:12, borderRight:'2px solid #d1d5db', height:'100%', display:'flex', flexDirection:'column', justifyContent:'center'}}>
+                        <div style={{fontSize:12, color:'#6b7280', marginBottom:4}}>
+                          Client name: {it.client_name ? (
+                            <span style={{color:'#111', fontWeight:700}}>&quot;{it.client_name}&quot;</span>
+                          ) : (
+                            <span style={{color:'#9ca3af'}}>&quot;-&quot;</span>
+                          )}
+                        </div>
+                        <div style={{fontWeight:600, whiteSpace:'nowrap', textOverflow:'ellipsis', overflow:'hidden'}}>
+                          <span style={{fontSize:12, color:'#6b7280', fontWeight:500, marginRight:6}}>subject:</span>
+                          <span title={it.title}>{it.title}</span>
+                        </div>
+                      </div>
+                      {/* Right: assigned by and status */}
+                      <div style={{display:'flex', flexDirection:'column', gap:6, alignItems:'flex-end'}}>
+                        {by ? (
+                          <div>
+                            <span style={{fontSize:12, color:'#6b7280', marginRight:6}}>Assigned by</span>
+                            <span style={{padding:'2px 8px', borderRadius:999, fontSize:12, fontWeight:800, background:'#ecfeff', color:'#155e75', border:'1px solid #a5f3fc'}}>@{by}</span>
+                          </div>
+                        ) : null}
+                        <span style={badgeStyle(it.status)} className="badge">{chipIcon(it.kind, it.status)} {it.status}</span>
+                      </div>
+                    </div>
                   );
                 })()}
               </div>
-            </div>
+            ) : empMyOverviewLayout && (it.kind === 'CALL' || it.kind === 'EMAIL') ? (
+              <div style={{flex:1, minWidth:0}}>
+                {(() => {
+                  const f = fmtDateAndTime(it.when);
+                  const whenDate = asDate(it.when);
+                  const now = new Date();
+                  const isPast = whenDate < now;
+                  const badgeTimer = isPast
+                    ? { border:'1px solid #fecaca', background:'#fef2f2', color:'#991b1b' }
+                    : { border:'1px solid #bbf7d0', background:'#ecfdf5', color:'#166534' };
+                  const by = it.created_by_name || '';
+                  const isEmail = String(it.kind).toUpperCase() === 'EMAIL';
+                  const personOrEmail = isEmail ? (it.receiver_email || it.who || '-') : (it.person_name || it.who || '-');
+                  return (
+                    <div style={{display:'grid', gridTemplateColumns:'140px 1fr 200px', gap:12, alignItems:'stretch'}}>
+                      {/* Left: date + time line, then countdown */}
+                      <div style={{display:'flex', flexDirection:'column', gap:6, paddingRight:12, borderRight:'2px solid #d1d5db', height:'100%', justifyContent:'center'}}>
+                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                          <span style={{fontWeight:700, color:'#111', fontSize:12}}>{f.dateText}</span>
+                          <span style={{fontWeight:700, color:'#111', background:'#eef2ff', padding:'1px 6px', borderRadius:6, fontSize:12}}>{f.timeText}</span>
+                        </div>
+                        <div title={whenDate.toLocaleString()} style={{...badgeTimer, padding:'2px 8px', borderRadius:999, fontSize:11, width:'fit-content'}}>
+                          ⏱ {(() => { const info = dueLeftInfo(it.when); return info.state === 'past' ? `Overdue by ${info.hm}` : `Starts in ${info.hm}`; })()}
+                        </div>
+                      </div>
+                      {/* Middle: client (only if present), then person/email, then subject */}
+                      <div style={{minWidth:0, paddingRight:12, borderRight:'2px solid #d1d5db', height:'100%', display:'flex', flexDirection:'column', justifyContent:'center', gap:2}}>
+                        {it.client_name ? (
+                          <div style={{fontSize:12, color:'#6b7280'}}>Client name: <span style={{color:'#111', fontWeight:700}}>&quot;{it.client_name}&quot;</span></div>
+                        ) : null}
+                        <div style={{fontSize:12, color:'#6b7280'}}>
+                          {isEmail ? 'email:' : 'person name:'} <span style={{color:'#111', fontWeight:600, fontFamily: isEmail ? 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' : 'inherit'}}>{personOrEmail}</span>
+                        </div>
+                        <div style={{fontWeight:600, whiteSpace:'nowrap', textOverflow:'ellipsis', overflow:'hidden'}}>
+                          <span style={{fontSize:12, color:'#6b7280', fontWeight:500, marginRight:6}}>subject:</span>
+                          <span title={it.title}>{it.title}</span>
+                        </div>
+                      </div>
+                      {/* Right: 3-line stack: 1) Assigned by  2) Status + Edit  3) Done/Sent + Failed */}
+                      <div style={{display:'flex', flexDirection:'column', gap:6, alignItems:'flex-end', justifyContent:'center'}}>
+                        {/* Line 1: Assigned by */}
+                        {by ? (
+                          <div style={{display:'flex', alignItems:'center', gap:8}}>
+                            <span style={{fontSize:12, color:'#6b7280'}}>Assigned by</span>
+                            <span style={{padding:'2px 8px', borderRadius:999, fontSize:12, fontWeight:800, background:'#ecfeff', color:'#155e75', border:'1px solid #a5f3fc'}}>@{by}</span>
+                          </div>
+                        ) : null}
+                        {/* Line 2: Status + Edit */}
+                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                          <span style={badgeStyle(it.status)} className="badge">{chipIcon(it.kind, it.status)} {it.status}</span>
+                          {onEdit && (
+                            <button className="btn" type="button" title="Edit"
+                              onClick={() => onEdit(it)}
+                              style={{border:'1px solid #e5e7eb', background:'#fff', color:'#111', borderRadius:999, padding:'3px 8px', fontSize:11}}>
+                              ✎ Edit
+                            </button>
+                          )}
+                        </div>
+                        {/* Line 3: Done/Sent + Failed (only when not terminal) */}
+                        {it.status !== 'DONE' && it.status !== 'FAILED' && it.status !== 'SENT' && (
+                          <div style={{display:'flex', alignItems:'center', gap:8}}>
+                            {onMarkDone && (
+                              <button className="btn" type="button" title={isEmail ? 'Mark sent' : 'Mark done'} onClick={() => onMarkDone(it.id)}
+                                style={{border:'1px solid #e5e7eb', background:'#fff', color:'#111', borderRadius:999, padding:'3px 8px', fontSize:11}}>
+                                {isEmail ? '✓ Sent' : '✓ Done'}
+                              </button>
+                            )}
+                            {onMarkFailed && (
+                              <button className="btn" type="button" title="Mark failed" onClick={() => onMarkFailed(it.id)}
+                                style={{border:'1px solid #e5e7eb', background:'#fff', color:'#991b1b', borderRadius:999, padding:'3px 8px', fontSize:11}}>
+                                ✕ Failed
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontWeight:600, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                  {(it.kind === 'CALL' || it.kind === 'EMAIL') ? (
+                    <Tooltip content={renderReminderTooltip(it)} delayShow={400} delayHide={120}>
+                      <span style={{cursor:'help'}}>{it.title}</span>
+                    </Tooltip>
+                  ) : (
+                    <span>{it.title}</span>
+                  )}
+                  {it.kind === 'MEETING' && it.client_name ? (
+                    <span
+                      title="Client"
+                      style={{
+                        display:'inline-block',
+                        padding:'2px 8px',
+                        borderRadius:999,
+                        fontSize:11,
+                        fontWeight:800,
+                        background:'#fff7ed', // warm highlight
+                        color:'#7c2d12',
+                        border:'1px solid #fed7aa'
+                      }}
+                    >
+                      {it.client_name}
+                    </span>
+                  ) : null}
+                </div>
+                <div style={{fontSize:12, color:'#6b7280', display:'flex', alignItems:'center', flexWrap:'wrap', gap:6}}>
+                  {(() => {
+                    const f = fmtDateAndTime(it.when);
+                    return (
+                      <>
+                        <span style={{fontWeight:700, color:'#111'}}>{f.dateText}</span>
+                        <span style={{fontWeight:800, color:'#111', background:'#eef2ff', padding:'1px 6px', borderRadius:6}}>{f.timeText}</span>
+                        {it.kind === 'MEETING' ? (
+                          <>
+                            {/* Default meeting layout (non-employee overview) */}
+                            {it.assignee ? (
+                              <span title="Assigned To" style={{padding:'1px 6px', borderRadius:999, fontSize:11, fontWeight:700, background:'#eef2ff', color:'#3730a3', border:'1px solid #c7d2fe'}}>
+                                {it.assignee}
+                              </span>
+                            ) : null}
+                            {(() => {
+                              const hasIds = it.created_by_user_id && it.assigned_to_user_id;
+                              const idsDiffer = hasIds && String(it.created_by_user_id) !== String(it.assigned_to_user_id);
+                              const labelsDiffer = !hasIds && it.created_by_name && it.assignee && String(it.created_by_name) !== String(it.assignee);
+                              return (idsDiffer || labelsDiffer) && (it.created_by_username || it.created_by_name);
+                            })() ? (
+                              <span title="Assigned by" style={{padding:'1px 6px', borderRadius:999, fontSize:11, fontWeight:800, background:'#ecfeff', color:'#155e75', border:'1px solid #a5f3fc'}}>
+                                Assigned by {it.created_by_username || it.created_by_name}
+                              </span>
+                            ) : null}
+                          </>
+                        ) : (
+                          <>
+                            {it.who ? <span>{it.who}</span> : null}
+                            {(() => {
+                              const hasIds = it.created_by_user_id && it.assigned_to_user_id;
+                              const idsDiffer = hasIds && String(it.created_by_user_id) !== String(it.assigned_to_user_id);
+                              const labelsDiffer = !hasIds && it.created_by_name && it.assigned_to && String(it.created_by_name) !== String(it.assigned_to);
+                              return (idsDiffer || labelsDiffer) && it.created_by_name;
+                            })() ? (
+                              <span title="Assigned by" style={{padding:'1px 6px', borderRadius:999, fontSize:11, fontWeight:800, background:'#ecfeff', color:'#155e75', border:'1px solid #a5f3fc'}}>
+                                Assigned by {it.created_by_name}
+                              </span>
+                            ) : null}
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
             {(() => {
+              if (empMyOverviewLayout && (it.kind === 'MEETING' || it.kind === 'CALL' || it.kind === 'EMAIL')) return null; // countdown/status/buttons rendered within the custom grid
               const now = new Date();
               const whenDate = asDate(it.when);
               const isFuture = whenDate > now;
@@ -1258,6 +1403,7 @@ function toMeetingItem(m) {
     assigned_to_user_id: m.assigned_to_user_id || null,
     created_by_user_id: m.created_by_user_id || null,
     created_by_name: m.created_by_full_name || m.created_by_username || m.created_by_email || m.created_by || '',
+    created_by_username: m.created_by_username || '',
   };
 }
 

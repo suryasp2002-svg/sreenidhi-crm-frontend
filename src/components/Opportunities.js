@@ -115,6 +115,24 @@ function Opportunities({ perms }) {
     </svg>
   );
 
+  // Assignment markers
+  // Customer icon (avatar in a circle)
+  const CustomerIcon = ({ size = 20 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="10" fill="#111" opacity="0.08" />
+      <circle cx="12" cy="10" r="3.3" fill="#111" />
+      <path d="M5.5 18.4c1.7-3 4-4.4 6.5-4.4s4.8 1.4 6.5 4.4" fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+  // Contract icon (document with pencil)
+  const ContractIcon = ({ size = 20 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <rect x="5" y="3" width="11" height="18" rx="2" ry="2" fill="#111" opacity="0.08" stroke="#111" />
+      <path d="M8 7h6M8 10h6M8 13h4" stroke="#111" strokeWidth="2" strokeLinecap="round" />
+      <path d="M14.5 15.5l3.8 3.8-2.8.7.7-2.8-1.7-1.7z" fill="#111" />
+    </svg>
+  );
+
   // Debounce search term to avoid chatty requests
   useEffect(() => {
     const h = setTimeout(() => setDebouncedSearch(search), 350);
@@ -451,8 +469,9 @@ function Opportunities({ perms }) {
     const printContents = document.getElementById('opportunitiesTable').outerHTML;
     const win = window.open('', '', 'height=700,width=900');
     win.document.write('<html><head><title>Opportunities</title>');
-    win.document.write('<style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left;}th{background:#f5f5f5;}</style>');
+    win.document.write('<style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left;}th{background:#f5f5f5;} .brand{display:flex;align-items:center;gap:10px;margin:8px 0 12px;} .brand img{border-radius:50%;object-fit:cover}</style>');
     win.document.write('</head><body>');
+    win.document.write('<div class="brand"><img src="/assets/branding/logo.png" alt="Logo" width="36" height="36"/><div style="font-weight:800">Sreenidhi CRM — Opportunities</div></div>');
     win.document.write(printContents);
     win.document.write('</body></html>');
     win.document.close();
@@ -986,20 +1005,8 @@ function Opportunities({ perms }) {
               return sorted.map(o => (
                 <tr key={o.opportunity_id}>
                   <td style={{ padding:'8px 10px', verticalAlign:'middle' }}>
-                    <span
-                      title={o.assignment === 'CONTRACT' ? 'Contract' : 'Customer'}
-                      aria-label={o.assignment === 'CONTRACT' ? 'Contract' : 'Customer'}
-                      style={{
-                        display:'inline-block',
-                        width: o.assignment === 'CONTRACT' ? 23 : 18,
-                        textAlign:'center',
-                        marginRight:8,
-                        fontSize: o.assignment === 'CONTRACT' ? 23 : 18,
-                        lineHeight:1,
-                        verticalAlign:'middle'
-                      }}
-                    >
-                      {o.assignment === 'CONTRACT' ? '★' : '■'}
+                    <span title={o.assignment === 'CONTRACT' ? 'Contract' : 'Customer'} aria-label={o.assignment === 'CONTRACT' ? 'Contract' : 'Customer'} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:36,height:36,marginRight:10,verticalAlign:'middle'}}>
+                      {o.assignment === 'CONTRACT' ? <ContractIcon size={32} /> : <CustomerIcon size={32} />}
                     </span>
                     {o.client_name}
                   </td>

@@ -7,6 +7,12 @@ export default function Profile({ token }) {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState({});
+  // Keep a saved baseline snapshot to allow cancel/discard
+  const [baseUser, setBaseUser] = useState(null);
+  const [baseProfile, setBaseProfile] = useState(null);
+  // Edit-mode and confirm modal
+  const [isEditing, setIsEditing] = useState(false);
+  const [confirm, setConfirm] = useState({ open:false, action:'save' }); // action: 'save' | 'discard'
   const [msg, setMsg] = useState('');
   const [pwd, setPwd] = useState({ current:'', next:'', confirm:'' });
   const [pwdMsg, setPwdMsg] = useState('');
@@ -37,9 +43,12 @@ export default function Profile({ token }) {
       const r = await fetch('/api/profile/me', { headers: { Authorization: 'Bearer '+token }});
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || 'Failed to load profile');
-  setUser(data.user);
-  setRole(data.user?.role || null);
+      setUser(data.user);
+      setRole(data.user?.role || null);
       setProfile(data.profile || {});
+      setBaseUser(data.user);
+      setBaseProfile(data.profile || {});
+      setIsEditing(false);
       try {
         const img = await fetch('/api/profile/photo/me', { headers: { Authorization: 'Bearer '+token }});
         if (img.ok) {
@@ -94,6 +103,10 @@ export default function Profile({ token }) {
       catch { const txt = await r.text().catch(()=> ''); if (!r.ok) throw new Error(txt || 'Failed to save'); }
       if (!r.ok) throw new Error((data && data.error) || 'Failed to save');
       setMsg('Saved');
+      // Commit new baseline and exit edit mode
+      setBaseUser(user);
+      setBaseProfile(profile);
+      setIsEditing(false);
     } catch (e) { setMsg(e.message); }
   }
 
@@ -141,7 +154,8 @@ export default function Profile({ token }) {
   if (loading) return <div style={{padding:24}}>Loading…</div>;
   return (
     <div style={{padding:'16px 8px', maxWidth: 1000, margin:'0 auto'}}>
-      <div style={{display:'flex', gap:8, marginBottom:16}}>
+      <div style={{display:'flex', gap:8, marginBottom:16, alignItems:'center'}}>
+        <img src="/assets/branding/logo.png" alt="Sreenidhi Fuels" width="28" height="28" style={{borderRadius:'50%', objectFit:'cover', marginRight:6}} onError={(e)=>{ e.currentTarget.style.display='none'; }} />
         <button onClick={()=>setTab('Profile')} className="btn" style={{padding:'8px 14px', borderRadius:20, background: tab==='Profile'?'#111':'#e5e7eb', color: tab==='Profile'?'#fff':'#111'}}>Profile</button>
         <button onClick={()=>setTab('Password')} className="btn" style={{padding:'8px 14px', borderRadius:20, background: tab==='Password'?'#111':'#e5e7eb', color: tab==='Password'?'#fff':'#111'}}>Change Password</button>
         {(role==='OWNER' || role==='ADMIN') && (
@@ -155,24 +169,24 @@ export default function Profile({ token }) {
               {photoUrl ? <img alt="profile" src={photoUrl} style={{width:'100%',height:'100%',objectFit:'cover'}}/> : <span style={{color:'#888'}}>No photo</span>}
             </div>
             <div style={{marginTop:8}}>
-              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onPickPhoto} />
+              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onPickPhoto} disabled={!isEditing} />
             </div>
             <div style={{marginTop:8, fontSize:12, color:'#6b7280'}}>Max 5MB. PNG/JPEG/WEBP.</div>
           </div>
           <div style={{display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12}}>
-            <Field label="Full name"><input value={user?.full_name||''} onChange={e=>setUser({...user, full_name:e.target.value})} style={input}/></Field>
+            <Field label="Full name"><input value={user?.full_name||''} onChange={e=>setUser({...user, full_name:e.target.value})} style={isEditing?input:inputDisabled} disabled={!isEditing}/></Field>
             <Field label="Username"><input value={user?.username||''} disabled style={{...input, background:'#f3f4f6'}}/></Field>
-            <Field label="Email"><input value={user?.email||''} onChange={e=>setUser({...user, email:e.target.value})} style={input} /></Field>
+            <Field label="Email"><input value={user?.email||''} onChange={e=>setUser({...user, email:e.target.value})} style={isEditing?input:inputDisabled} disabled={!isEditing} /></Field>
             <Field label="Phone">
               <input value={user?.phone||''}
                      onChange={e=>{ const val = lockPhone(e.target.value); setUser({...user, phone: val}); v.schedule('phone', val); }}
                      onBlur={()=> v.onBlur('phone')}
-                     style={input} placeholder="+91 9876543210 or 9876543210" />
+                     style={isEditing?input:inputDisabled} disabled={!isEditing} placeholder="+91 9876543210 or 9876543210" />
               {v.touched.phone && v.errors.phone && <div style={errText}>{v.errors.phone}</div>}
             </Field>
-            <Field label="Date of Birth"><input type="date" value={profile?.date_of_birth||''} onChange={e=>setProfile({...profile, date_of_birth:e.target.value})} style={input}/></Field>
+            <Field label="Date of Birth"><input type="date" value={profile?.date_of_birth||''} onChange={e=>setProfile({...profile, date_of_birth:e.target.value})} style={isEditing?input:inputDisabled} disabled={!isEditing}/></Field>
             <Field label="Gender">
-              <select value={profile?.gender||''} onChange={e=>setProfile({...profile, gender:e.target.value})} style={input}>
+              <select value={profile?.gender||''} onChange={e=>setProfile({...profile, gender:e.target.value})} style={isEditing?input:inputDisabled} disabled={!isEditing}>
                 <option value="">Select…</option>
                 <option value="MALE">Male</option>
                 <option value="FEMALE">Female</option>
@@ -180,9 +194,9 @@ export default function Profile({ token }) {
                 <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
               </select>
             </Field>
-            <Field label="Emergency Contact Name"><input value={profile?.emergency_contact_name||''} onChange={e=>setProfile({...profile, emergency_contact_name:e.target.value})} style={input} /></Field>
-            <Field label="Emergency Contact Phone"><input value={profile?.emergency_contact_phone||''} onChange={e=>setProfile({...profile, emergency_contact_phone:e.target.value})} style={input} /></Field>
-            <Field label="Address" full><textarea value={profile?.address||''} onChange={e=>setProfile({...profile, address:e.target.value})} style={{...input, minHeight:64}} /></Field>
+            <Field label="Emergency Contact Name"><input value={profile?.emergency_contact_name||''} onChange={e=>setProfile({...profile, emergency_contact_name:e.target.value})} style={isEditing?input:inputDisabled} disabled={!isEditing} /></Field>
+            <Field label="Emergency Contact Phone"><input value={profile?.emergency_contact_phone||''} onChange={e=>setProfile({...profile, emergency_contact_phone:e.target.value})} style={isEditing?input:inputDisabled} disabled={!isEditing} /></Field>
+            <Field label="Address" full><textarea value={profile?.address||''} onChange={e=>setProfile({...profile, address:e.target.value})} style={{...(isEditing?input:inputDisabled), minHeight:64}} disabled={!isEditing} /></Field>
             <Field label="Joining Date"><input type="date" value={(user?.joining_date||'').slice(0,10)} disabled style={{...input, background:'#f3f4f6'}} /></Field>
             <Field label="Status">
               <input value={user?.status||''} disabled style={{...input, background:'#f3f4f6'}} />
@@ -191,21 +205,30 @@ export default function Profile({ token }) {
               <input value={profile?.pan||''}
                      onChange={e=>{ const val = lockPan(e.target.value); setProfile({...profile, pan: val}); v.schedule('pan', val); }}
                      onBlur={()=> v.onBlur('pan')}
-                     style={input} placeholder="ABCDE1234F"/>
+                     style={isEditing?input:inputDisabled} disabled={!isEditing} placeholder="ABCDE1234F"/>
               {v.touched.pan && v.errors.pan && <div style={errText}>{v.errors.pan}</div>}
             </Field>
             <Field label="Aadhaar">
               <input value={profile?.aadhaar||''}
                      onChange={e=>{ const val = lockAadhaar(e.target.value); setProfile({...profile, aadhaar: val}); v.schedule('aadhaar', val); }}
                      onBlur={()=> v.onBlur('aadhaar')}
-                     style={input} placeholder="12-digit"/>
+                     style={isEditing?input:inputDisabled} disabled={!isEditing} placeholder="12-digit"/>
               {v.touched.aadhaar && v.errors.aadhaar && <div style={errText}>{v.errors.aadhaar}</div>}
             </Field>
             <div style={{gridColumn:'1/-1', display:'flex', alignItems:'center', gap:10}}>
-              <button onClick={saveProfile} className="btn" style={{background:'#111',color:'#fff',padding:'10px 16px',borderRadius:8, opacity: (v.errors.phone||v.errors.pan||v.errors.aadhaar) ? 0.6 : 1}}
-                disabled={Boolean(v.errors.phone||v.errors.pan||v.errors.aadhaar)}>
-                Save
-              </button>
+              {!isEditing ? (
+                <button onClick={() => { setIsEditing(true); setUser(baseUser); setProfile(baseProfile || {}); }} className="btn" style={{background:'#111',color:'#fff',padding:'10px 16px',borderRadius:8}}>
+                  Edit
+                </button>
+              ) : (
+                <>
+                  <button onClick={(e) => { e.preventDefault(); setConfirm({ open:true, action:'save' }); }} className="btn" style={{background:'#111',color:'#fff',padding:'10px 16px',borderRadius:8, opacity: (v.errors.phone||v.errors.pan||v.errors.aadhaar) ? 0.6 : 1}}
+                    disabled={Boolean(v.errors.phone||v.errors.pan||v.errors.aadhaar)}>
+                    Save
+                  </button>
+                  <button onClick={() => { setConfirm({ open:true, action:'discard' }); }} className="btn" style={{background:'#eee',color:'#222',padding:'10px 16px',borderRadius:8}}>Cancel</button>
+                </>
+              )}
               {msg && <span style={{fontSize:12, color: msg==='Saved' ? 'green' : 'crimson'}}>{msg}</span>}
             </div>
           </div>
@@ -226,6 +249,26 @@ export default function Profile({ token }) {
       {tab==='Employees' && (role==='OWNER' || role==='ADMIN') && (
         <EmployeesGrid token={token} />
       )}
+      <ConfirmModal
+        open={confirm.open}
+        title={confirm.action==='save' ? 'Save changes?' : 'Discard changes?'}
+        message={confirm.action==='save' ? 'Do you want to save your changes to profile?' : 'Discard all changes made to the profile?'}
+        confirmText={confirm.action==='save' ? 'Save' : 'Discard'}
+        cancelText="Cancel"
+        onCancel={() => setConfirm({ open:false, action:'save' })}
+        onConfirm={() => {
+          if (confirm.action === 'save') {
+            setConfirm({ open:false, action:'save' });
+            saveProfile();
+          } else {
+            // discard
+            setUser(baseUser);
+            setProfile(baseProfile || {});
+            setIsEditing(false);
+            setConfirm({ open:false, action:'save' });
+          }
+        }}
+      />
     </div>
   );
 }
@@ -274,6 +317,7 @@ function EmployeesGrid({ token }) {
   const [total, setTotal] = useState(0);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [qDebounced, setQDebounced] = useState('');
 
   async function fetchPage(p=1, r=role, query=q) {
     setLoading(true);
@@ -295,8 +339,12 @@ function EmployeesGrid({ token }) {
       setLoading(false);
     }
   }
-  useEffect(()=>{ fetchPage(page, role, q); }, [page, role, pageSize]);
-  useEffect(()=>{ fetchPage(1, role, q); }, []); // first load
+  useEffect(()=>{ fetchPage(page, role, qDebounced); }, [page, role, pageSize, qDebounced]);
+  useEffect(()=>{ fetchPage(1, role, qDebounced); }, []); // first load
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const disablePrev = page <= 1;
@@ -312,7 +360,6 @@ function EmployeesGrid({ token }) {
           <option value="ADMIN">Admin</option>
           <option value="EMPLOYEE">Employee</option>
         </select>
-        <button className="btn" onClick={()=> fetchPage(1, role, q)}>Search</button>
         <div style={{marginLeft:'auto', display:'flex', alignItems:'center', gap:8}}>
           <button className="btn" onClick={()=> setPage(p=>Math.max(1,p-1))} disabled={disablePrev}>Prev</button>
           <span style={{fontSize:12, color:'#6b7280'}}>Page {page} of {pages}</span>
@@ -420,3 +467,20 @@ function EmployeeModal({ token, user, onClose }) {
 
 const inputDisabled = { ...input, background:'#f3f4f6' };
 function maskPan(p) { if (!p) return ''; const s = String(p); return s.length>=10 ? `${s.slice(0,5)}****${s.slice(-1)}` : '****'; }
+
+// Simple confirm modal used for Save/Discard in Profile edit
+function ConfirmModal({ open, title='Confirm', message='Are you sure?', confirmText='Yes', cancelText='No', onConfirm, onCancel }) {
+  if (!open) return null;
+  return (
+    <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000}}>
+      <div style={{background:'#fff', borderRadius:12, padding:20, width:420, maxWidth:'90vw'}}>
+        <div style={{fontWeight:700, marginBottom:8}}>{title}</div>
+        <div style={{marginBottom:16}}>{message}</div>
+        <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
+          <button className="btn" onClick={onCancel} style={{background:'#eee', color:'#111'}}>{cancelText}</button>
+          <button className="btn" onClick={onConfirm} style={{background:'#111', color:'#fff'}}>{confirmText}</button>
+        </div>
+      </div>
+    </div>
+  );
+}

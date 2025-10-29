@@ -65,6 +65,14 @@ function History() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Dynamic search/filtering with small debounce (Stage History)
+  useEffect(() => {
+    if (activeTab !== 'stage') return;
+    const t = setTimeout(() => { fetchHistory(1, pageSize); }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.q, filters.dateFrom, filters.dateTo, filters.entityType, activeTab]);
+
   // When switching to Expense tab, auto-load data
   useEffect(() => {
     if (activeTab === 'expenses') {
@@ -79,7 +87,9 @@ function History() {
         .then(payload => {
           const m = {};
           const list = payload.items || [];
-          list.forEach(o => { if (o && o.opportunity_id) m[o.opportunity_id] = o.client_name || ''; });
+          list.forEach(o => {
+            if (o && o.opportunity_id) m[o.opportunity_id] = { name: o.client_name || '', assignment: o.assignment || 'CUSTOMER' };
+          });
           setOppMap(m);
         })
         .catch(() => {});
@@ -89,6 +99,22 @@ function History() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  // Dynamic filters for Expense Audit
+  useEffect(() => {
+    if (activeTab !== 'expenses') return;
+    const t = setTimeout(() => { fetchExpenseAudit(1, expPageSize); }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.q, filters.dateFrom, filters.dateTo, expAction, activeTab]);
+
+  // Dynamic filters for Password Audit
+  useEffect(() => {
+    if (activeTab !== 'passwords') return;
+    const t = setTimeout(() => { fetchPasswordAudit(1, pwdPageSize); }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.dateFrom, filters.dateTo, pwdTarget, pwdActor, activeTab]);
 
   // Expenses audit fetcher
   async function fetchExpenseAudit(p = expPage, s = expPageSize) {
@@ -179,13 +205,30 @@ function History() {
     const printContents = document.getElementById('historyTable').outerHTML;
     const win = window.open('', '', 'height=700,width=1000');
     win.document.write('<html><head><title>History</title>');
-    win.document.write('<style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left;}th{background:#f5f5f5;}</style>');
+    win.document.write('<style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left;}th{background:#f5f5f5;} .brand{display:flex;align-items:center;gap:10px;margin:8px 0 12px;} .brand img{border-radius:50%;object-fit:cover}</style>');
     win.document.write('</head><body>');
+    win.document.write('<div class="brand"><img src="/assets/branding/logo.png" alt="Logo" width="36" height="36"/><div style="font-weight:800">Sreenidhi CRM — Stage History</div></div>');
     win.document.write(printContents);
     win.document.write('</body></html>');
     win.document.close();
     win.print();
   }
+
+  // Assignment markers (reuseable small icons)
+  const CustomerIcon = ({ size = 32 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="10" fill="#111" opacity="0.08" />
+      <circle cx="12" cy="10" r="3.3" fill="#111" />
+      <path d="M5.5 18.4c1.7-3 4-4.4 6.5-4.4s4.8 1.4 6.5 4.4" fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+  const ContractIcon = ({ size = 32 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <rect x="5" y="3" width="11" height="18" rx="2" ry="2" fill="#111" opacity="0.08" stroke="#111" />
+      <path d="M8 7h6M8 10h6M8 13h4" stroke="#111" strokeWidth="2" strokeLinecap="round" />
+      <path d="M14.5 15.5l3.8 3.8-2.8.7.7-2.8-1.7-1.7z" fill="#111" />
+    </svg>
+  );
 
   return (
     <div>
@@ -199,7 +242,7 @@ function History() {
         <div className="grid cols-4">
           <div className="row" style={{gridColumn:'1/-1'}}>
             <label className="block">Search</label>
-            <input value={filters.q} onChange={e => setFilters(f => ({...f, q: e.target.value}))} onKeyDown={e => { if (e.key === 'Enter') { activeTab==='stage' ? fetchHistory(1, pageSize) : fetchExpenseAudit(1, expPageSize); } }} placeholder="Search by Opportunity ID, Client Name, Customer ID, Contract ID" />
+            <input value={filters.q} onChange={e => setFilters(f => ({...f, q: e.target.value}))} placeholder="Search by Opportunity ID, Client Name, Customer ID, Contract ID" />
           </div>
           <div className="row">
             <label className="block">From</label>
@@ -223,9 +266,8 @@ function History() {
                 </div>
               </div>
               <div className="row" style={{gridColumn:'1/-1'}}>
-                <button className="btn" type="button" onClick={() => fetchHistory(1, pageSize)}>Search</button>
-                <button className="btn" type="button" style={{marginLeft:8, background:'#eee', color:'#222'}} onClick={exportCSV}>Export CSV</button>
-                <button className="btn" type="button" style={{marginLeft:8, background:'#eee', color:'#222'}} onClick={printTable}>Print / PDF</button>
+                <button className="btn" type="button" style={{marginRight:8, background:'#eee', color:'#222'}} onClick={exportCSV}>Export CSV</button>
+                <button className="btn" type="button" style={{background:'#eee', color:'#222'}} onClick={printTable}>Print / PDF</button>
               </div>
             </>
           )}
@@ -241,8 +283,7 @@ function History() {
               </select>
             </div>
             <div className="row" style={{gridColumn:'1/-1'}}>
-              <button className="btn" type="button" onClick={() => fetchExpenseAudit(1, expPageSize)}>Search</button>
-              <button className="btn" type="button" style={{marginLeft:8, background:'#eee', color:'#222'}} onClick={() => {
+              <button className="btn" type="button" style={{marginLeft:0, background:'#eee', color:'#222'}} onClick={() => {
                 if (!expItems.length) return;
                 const headers = ['Opportunity ID','Client Name','Action','Old Amount','New Amount','Old Note','New Note','Performed By','Performed At'];
                 const rows = expItems.map(i => [i.opportunity_id, i.client_name || oppMap[i.opportunity_id] || '', i.action, i.old_amount ?? '', i.new_amount ?? '', i.old_note ?? '', i.new_note ?? '', i.performed_by ?? '', i.performed_at]);
@@ -255,8 +296,9 @@ function History() {
                 const html = document.getElementById('expenseAuditTable').outerHTML;
                 const win = window.open('', '', 'height=700,width=1000');
                 win.document.write('<html><head><title>Expense Audit</title>');
-                win.document.write('<style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left;}th{background:#f5f5f5;}</style>');
+                win.document.write('<style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left;}th{background:#f5f5f5;} .brand{display:flex;align-items:center;gap:10px;margin:8px 0 12px;} .brand img{border-radius:50%;object-fit:cover}</style>');
                 win.document.write('</head><body>');
+                win.document.write('<div class="brand"><img src="/assets/branding/logo.png" alt="Logo" width="36" height="36"/><div style="font-weight:800">Sreenidhi CRM — Expense Audit</div></div>');
                 win.document.write(html);
                 win.document.write('</body></html>');
                 win.document.close();
@@ -275,9 +317,7 @@ function History() {
                 <label className="block">Actor (who changed)</label>
                 <input value={pwdActor} onChange={e => setPwdActor(e.target.value)} />
               </div>
-              <div className="row" style={{gridColumn:'1/-1'}}>
-                <button className="btn" type="button" onClick={() => fetchPasswordAudit(1, pwdPageSize)}>Search</button>
-              </div>
+              <div className="row" style={{gridColumn:'1/-1'}} />
             </>
           )}
         </div>
@@ -302,8 +342,8 @@ function History() {
         <table id="historyTable">
           <thead>
             <tr>
-              <th>Opportunity ID</th>
               <th>Client Name</th>
+              <th>Opportunity ID</th>
               <th>Entity</th>
               <th>From</th>
               <th>To</th>
@@ -319,8 +359,13 @@ function History() {
             ) : (
               items.map((i,idx) => (
                 <tr key={`${i.entity_type}-${i.entity_id}-${i.changed_at}-${idx}`}>
+                  <td>
+                    <span title={(i.entity_type||'').toUpperCase()==='CONTRACT'?'Contract':'Customer'} aria-label={(i.entity_type||'').toUpperCase()==='CONTRACT'?'Contract':'Customer'} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:36,marginRight:8,verticalAlign:'middle'}}>
+                      {(i.entity_type||'').toUpperCase()==='CONTRACT' ? <ContractIcon /> : <CustomerIcon />}
+                    </span>
+                    {i.client_name || ''}
+                  </td>
                   <td>{i.opportunity_id || ''}</td>
-                  <td>{i.client_name || ''}</td>
                   <td>{i.entity_type}</td>
                   <td>{i.from_value}</td>
                   <td>{i.to_value}</td>
@@ -355,8 +400,8 @@ function History() {
         <table id="expenseAuditTable">
           <thead>
             <tr>
-              <th>Opportunity ID</th>
               <th>Client Name</th>
+              <th>Opportunity ID</th>
               <th>Action</th>
               <th>Old Amount</th>
               <th>New Amount</th>
@@ -372,8 +417,13 @@ function History() {
             ) : (
               expItems.map((i,idx) => (
                 <tr key={`${i.opportunity_id}-${i.performed_at}-${idx}`}>
+                  <td>
+                    <span title={(oppMap[i.opportunity_id]?.assignment||'CUSTOMER')==='CONTRACT'?'Contract':'Customer'} aria-label={(oppMap[i.opportunity_id]?.assignment||'CUSTOMER')==='CONTRACT'?'Contract':'Customer'} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:36,marginRight:8,verticalAlign:'middle'}}>
+                      {(oppMap[i.opportunity_id]?.assignment||'CUSTOMER')==='CONTRACT' ? <ContractIcon /> : <CustomerIcon />}
+                    </span>
+                    {i.client_name || oppMap[i.opportunity_id]?.name || (typeof oppMap[i.opportunity_id] === 'string' ? oppMap[i.opportunity_id] : '')}
+                  </td>
                   <td>{i.opportunity_id}</td>
-                  <td>{i.client_name || oppMap[i.opportunity_id] || ''}</td>
                   <td>{i.action}</td>
                   <td>{i.old_amount ?? ''}</td>
                   <td>{i.new_amount ?? ''}</td>

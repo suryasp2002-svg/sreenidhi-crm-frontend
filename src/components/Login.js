@@ -89,7 +89,10 @@ export default function Login({ onAuthed }) {
 
   return (
     <div style={{maxWidth:420, margin:'80px auto', padding:'32px', border:'1px solid #ddd', borderRadius:12, background:'#fff'}}>
-      <h2 style={{marginTop:0}}>Sreenidhi CRM</h2>
+      <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:6}}>
+        <img src="/assets/branding/logo.png" alt="Sreenidhi Fuels" width="36" height="36" style={{borderRadius:'50%', objectFit:'cover'}} onError={(e)=>{ e.currentTarget.style.display='none'; }} />
+        <h2 style={{margin:0}}>Sreenidhi CRM</h2>
+      </div>
       <div style={{marginBottom:12, fontSize:14, color:'#555'}}>
         {mode === 'login' ? 'Login to your account' : 'Initial owner registration (only if no owner exists)'}
       </div>

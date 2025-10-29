@@ -141,7 +141,10 @@ function App() {
     <>
       <header>
         <div className="wrap" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px'}}>
-          <div style={{fontWeight:700,fontSize:'20px'}}>Sreenidhi CRM</div>
+          <div style={{display:'flex', alignItems:'center', gap:8}}>
+            <img src="/assets/branding/logo.png" alt="Sreenidhi Fuels" width="32" height="32" style={{borderRadius:'50%', objectFit:'cover'}} onError={(e)=>{ e.currentTarget.style.display='none'; }} />
+            <div style={{fontWeight:700,fontSize:'20px'}}>Sreenidhi CRM</div>
+          </div>
           <nav className="nav" id="nav" style={{display:'flex', alignItems:'center', gap:8}}>
             {visibleTabs.map(t => (
               <button
