@@ -34,6 +34,9 @@ header {
   margin: 0 auto;
   padding: 16px;
 }
+@media (max-width: 768px) {
+  .wrap { padding: 12px; }
+}
 
 .nav button {
   border: 0;
@@ -60,7 +63,8 @@ header {
   padding: 8px 10px;
 }
 
-@media (max-width: 880px) {
+/* Mobile nav behavior (≤768px) */
+@media (max-width: 768px) {
   .nav-toggle { display: inline-flex; align-items: center; justify-content: center; }
   /* Hide nav by default on small screens; show when open */
   .nav { display: none !important; width: 100%; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 8px; }
@@ -85,7 +89,15 @@ header {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-@media (max-width: 880px) {
+/* Tablet breakpoint: 769–1024px forces 2 columns for dense grids */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .grid.cols-3,
+  .grid.cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* Mobile breakpoint: ≤768px collapses all grids to single column */
+@media (max-width: 768px) {
   .grid.cols-2,
   .grid.cols-3,
   .grid.cols-4 {
@@ -99,10 +111,12 @@ header {
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
-@media (max-width: 1000px) {
-  .two-panels {
-    grid-template-columns: 1fr;
-  }
+/* Tablet: 2-col (default already 2); Mobile: 1-col */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .two-panels { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 768px) {
+  .two-panels { grid-template-columns: 1fr; }
 }
 
 /* Generic 2-col form grid that collapses on small screens */
@@ -111,10 +125,20 @@ header {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-@media (max-width: 880px) {
-  .form-grid-2 {
-    grid-template-columns: 1fr;
-  }
+/* Mobile: single column forms */
+@media (max-width: 768px) {
+  .form-grid-2 { grid-template-columns: 1fr; }
+}
+
+/* Form element responsiveness on mobile */
+@media (max-width: 768px) {
+  .row input,
+  .row select,
+  .row textarea { width: 100%; }
+  /* Make primary action buttons full width inside forms/cards/modals */
+  .row .btn,
+  .card .btn,
+  .modal .modal-body .btn { width: 100%; }
 }
 
 .card {
@@ -122,6 +146,9 @@ header {
   border-radius: 16px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
   padding: 16px;
+}
+@media (max-width: 768px) {
+  .card { padding: 12px; border-radius: 12px; }
 }
 
 .card h3 {
@@ -182,6 +209,12 @@ tbody td {
   /* Allow content to wrap within cells */
   white-space: normal;
   word-break: break-word;
+}
+
+/* Responsive table behavior: enable horizontal scroll when needed */
+@media (max-width: 1024px) {
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  thead, tbody, tr, th, td { white-space: nowrap; }
 }
 
 /* Prevent minor overflows from introducing page-wide horizontal scroll */
