@@ -139,6 +139,16 @@ header {
   .row .btn,
   .card .btn,
   .modal .modal-body .btn { width: 100%; }
+  /* Force inline grid layouts (with inline styles) to stack as single column */
+  [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+  /* File input full width and media elements scale down */
+  input[type="file"] { width: 100%; }
+  img, video, canvas { max-width: 100%; height: auto; }
+  /* Generic buttons in content wrap become full-width for easier touch */
+  .wrap button { width: 100%; }
+  .wrap button + button { margin-top: 8px; }
+  /* Stack typical form rows set as flex (defensive) */
+  .row { display: flex; flex-direction: column; gap: 8px; }
 }
 
 .card {
