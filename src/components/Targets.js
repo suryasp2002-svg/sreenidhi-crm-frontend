@@ -17,15 +17,32 @@ function Targets({ perms }) {
   const [isAdminUser, setIsAdminUser] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [userRole, setUserRole] = useState(null);
+  // Sub-tab to switch between list and creation panel (restores the missing Create tab)
+  const [subTab, setSubTab] = useState('list'); // 'list' | 'create'
   const [userOptions, setUserOptions] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState('');
+  const [myUserId, setMyUserId] = useState('');
+  const [myUsername, setMyUsername] = useState('');
   const v = useValidation(form, {
     client_name: { required: true },
     status: { required: true },
   }, { debounceMs: 150 });
 
-  useEffect(() => { (async () => { try { setIsAdminUser(await isAdmin()); setUserRole(await getRole()); } catch { setIsAdminUser(false); setUserRole(null); } })(); }, []);
+  useEffect(() => {
+    (async () => {
+      try { setIsAdminUser(await isAdmin()); setUserRole(await getRole()); } catch { setIsAdminUser(false); setUserRole(null); }
+      try {
+        const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+        const res = await fetch('/api/auth/me', { headers: token ? { Authorization: 'Bearer ' + token } : undefined });
+        if (res.ok) {
+          const me = await res.json();
+          setMyUserId(me.id || '');
+          setMyUsername(me.username || '');
+        }
+      } catch {}
+    })();
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -66,13 +83,17 @@ function Targets({ perms }) {
     return () => clearInterval(t);
   }, [search, statusFilter, page, pageSize]);
 
-  // Load users for assignment (Owner + Employee; Admin excluded for assignment targets)
+  // Load users for assignment
+  // Admin: include OWNER, EMPLOYEE, ADMIN (show all active users)
+  // Others: include OWNER, EMPLOYEE
   useEffect(() => {
     let aborted = false;
     async function fetchUsers() {
       setLoadingUsers(true); setUsersError('');
       try {
-        const res = await fetch('/api/users-lookup?roles=OWNER,EMPLOYEE');
+        const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+        const roles = (String(userRole).toUpperCase() === 'ADMIN') ? 'OWNER,EMPLOYEE,ADMIN' : 'OWNER,EMPLOYEE';
+        const res = await fetch(`/api/users-lookup?roles=${encodeURIComponent(roles)}`, { headers: token ? { Authorization: 'Bearer ' + token } : undefined });
         const data = await res.json();
         if (!aborted) {
           if (res.ok) setUserOptions(Array.isArray(data)?data:[]);
@@ -83,7 +104,7 @@ function Targets({ perms }) {
     }
     fetchUsers();
     return () => { aborted = true; };
-  }, []);
+  }, [userRole]);
 
   function onChange(e) { const { name, value } = e.target; setForm(f=>({ ...f, [name]: value })); v.schedule(name, value); }
 
@@ -115,7 +136,7 @@ function Targets({ perms }) {
       client_name,
       notes: form.notes.trim() || null,
       status: form.status,
-      assignedToUserId: form.assignedToUserId || undefined,
+      assignedToUserId: form.assignedToUserId || myUserId || undefined,
       assigned_to: form.assigned_to || undefined,
     };
     try {
@@ -170,8 +191,31 @@ function Targets({ perms }) {
 
   return (
     <div style={{ padding: '16px 0' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, alignItems: 'start' }}>
-        {/* Left panel: List of created targets */}
+      {/* Sub tabs: Targets list / Create Target */}
+      <div style={{display:'flex', gap:8, marginBottom:12}}>
+        <button
+          type="button"
+          onClick={()=> setSubTab('list')}
+          className={subTab==='list' ? 'nav-btn active' : 'nav-btn'}
+          style={{background: subTab==='list' ? '#111' : '#f5f5f5', color: subTab==='list' ? '#fff' : '#222', border:'none', borderRadius:20, padding:'6px 14px', cursor:'pointer'}}
+        >
+          Targets
+        </button>
+        {userRole !== 'EMPLOYEE' && (
+          <button
+            type="button"
+            onClick={()=> setSubTab('create')}
+            className={subTab==='create' ? 'nav-btn active' : 'nav-btn'}
+            style={{background: subTab==='create' ? '#111' : '#f5f5f5', color: subTab==='create' ? '#fff' : '#222', border:'none', borderRadius:20, padding:'6px 14px', cursor:'pointer'}}
+          >
+            Create Target
+          </button>
+        )}
+      </div>
+
+      {/* Panels rendered based on subTab selection */}
+      {subTab === 'list' && (
+        /* Left panel: List of created targets */
         <div className="card">
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12}}>
             <h3 style={{margin:0}}>Targets</h3>
@@ -239,10 +283,11 @@ function Targets({ perms }) {
           {/* Server-driven paging: we don't know total; omit summary */}
           {error && <div style={{color:'#b91c1c',marginTop:8}}>{error}</div>}
         </div>
+      )}
 
-  {/* Right panel: Create form (hidden for EMPLOYEE) */}
-  {userRole !== 'EMPLOYEE' && (
-  <div className="card">
+      {/* Right panel: Create form (hidden for EMPLOYEE), shown when subTab is 'create' */}
+      {subTab === 'create' && userRole !== 'EMPLOYEE' && (
+        <div className="card">
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
             <h3 style={{margin:0}}>{editingId ? 'Edit Target' : 'Create Target'}</h3>
             {isAdminUser && (
@@ -308,11 +353,16 @@ function Targets({ perms }) {
                 value={form.assignedToUserId || ''}
                 onChange={e=> setForm(f=> ({ ...f, assignedToUserId: e.target.value }))}
               >
-                <option value="">Select user</option>
+                {myUserId
+                  ? <option value={myUserId}>{`Myself - ${myUsername} (${String(userRole || '').toUpperCase() || 'USER'})`}</option>
+                  : <option value="">Select user</option>
+                }
                 {loadingUsers && <option value="" disabled>(Loading users...)</option>}
                 {!loadingUsers && userOptions.length === 0 && <option value="" disabled>(No users)</option>}
-                {userOptions.filter(u => u.role !== 'ADMIN').map(u => {
-                  const label = u.full_name || u.username || u.email;
+                {userOptions
+                  .filter(u => String(u.id) !== String(myUserId))
+                  .map(u => {
+                  const label = u.username || '';
                   return <option key={u.id} value={u.id}>{label} ({u.role})</option>;
                 })}
               </select>
@@ -324,8 +374,7 @@ function Targets({ perms }) {
             </div>
           </form>
         </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

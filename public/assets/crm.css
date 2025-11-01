@@ -50,6 +50,24 @@ header {
   color: #fff;
 }
 
+/* Responsive navigation */
+.nav-toggle {
+  display: none;
+  background: #f3f4f6;
+  border: 1px solid var(--border);
+  color: #111;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+@media (max-width: 880px) {
+  .nav-toggle { display: inline-flex; align-items: center; justify-content: center; }
+  /* Hide nav by default on small screens; show when open */
+  .nav { display: none !important; width: 100%; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 8px; }
+  .nav.open { display: flex !important; }
+  .nav button { width: 100%; margin: 4px 0; }
+}
+
 .grid {
   display: grid;
   gap: 16px;
@@ -63,9 +81,38 @@ header {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.grid.cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 @media (max-width: 880px) {
   .grid.cols-2,
-  .grid.cols-3 {
+  .grid.cols-3,
+  .grid.cols-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Two-panels helper used in Reminders */
+.two-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 1000px) {
+  .two-panels {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Generic 2-col form grid that collapses on small screens */
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 880px) {
+  .form-grid-2 {
     grid-template-columns: 1fr;
   }
 }

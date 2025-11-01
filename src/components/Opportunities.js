@@ -50,6 +50,7 @@ function Opportunities({ perms }) {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [userOptionsError, setUserOptionsError] = useState('');
   const [isAdminUser, setIsAdminUser] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null); // { id, username }
   // Sector filter state
   const [sectorFilterOpen, setSectorFilterOpen] = useState(false);
   const [sectorFilterSearch, setSectorFilterSearch] = useState('');
@@ -174,6 +175,20 @@ function Opportunities({ perms }) {
     })();
   }, []);
 
+  // Load current user (for defaulting salesperson to 'Myself')
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+        const r = await fetch('/api/auth/me', { headers: token ? { Authorization: 'Bearer ' + token } : undefined });
+        if (r.ok) {
+          const me = await r.json();
+          setCurrentUser(me);
+        }
+      } catch {}
+    })();
+  }, []);
+
   // Load users for salesperson dropdown (Owner + Employee by default)
   useEffect(() => {
     let aborted = false;
@@ -181,18 +196,31 @@ function Opportunities({ perms }) {
       setLoadingUsers(true);
       setUserOptionsError('');
       try {
-  const r = await fetch('/api/users-lookup?roles=OWNER,EMPLOYEE');
+        const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+        const auth = token ? { Authorization: 'Bearer ' + token } : {};
+        const rolesParam = (currentUser?.role === 'ADMIN') ? 'OWNER,EMPLOYEE,ADMIN' : 'OWNER,EMPLOYEE';
+        const r = await fetch(`/api/users-lookup?roles=${rolesParam}` , { headers: auth });
         const data = await r.json();
         if (!aborted && r.ok) {
-          const list = Array.isArray(data) ? data : [];
+          let list = Array.isArray(data) ? data : [];
+          // Remove self from the options to avoid duplicating with the explicit "Myself" option
+          if (currentUser?.id) {
+            list = list.filter(u => u.id !== currentUser.id);
+          }
+          // Sort by role priority (ADMIN, EMPLOYEE, OWNER) then by username
+          const roleRank = (r) => (r === 'ADMIN' ? 0 : r === 'EMPLOYEE' ? 1 : r === 'OWNER' ? 2 : 3);
+          list.sort((a,b) => {
+            const rr = roleRank(a.role) - roleRank(b.role);
+            if (rr !== 0) return rr;
+            const ua = String(a.username || '').toLowerCase();
+            const ub = String(b.username || '').toLowerCase();
+            if (ua < ub) return -1; if (ua > ub) return 1; return 0;
+          });
           setUserOptions(list);
           // If no salesperson picked yet, default to the first available selectable user
-          if (!form.salesperson && list.length) {
-            const first = list.find(u => u && (u.full_name || u.username || u.email));
-            if (first) {
-              const label = first.full_name || first.username || first.email;
-              setForm(f => ({ ...f, salesperson: label }));
-            }
+          if (!form.salesperson) {
+            const preferred = (currentUser && currentUser.username) ? currentUser.username : (list[0]?.username || '');
+            if (preferred) setForm(f => ({ ...f, salesperson: preferred }));
           }
         } else if (!aborted) {
           setUserOptions([]);
@@ -206,7 +234,7 @@ function Opportunities({ perms }) {
     }
     loadUsers();
     return () => { aborted = true; };
-  }, []);
+  }, [currentUser?.username, currentUser?.role, currentUser?.id]);
 
   // Handlers for form fields
   const handleChange = e => {
@@ -652,16 +680,11 @@ function Opportunities({ perms }) {
               required
               className={(v.touched.salesperson && v.errors.salesperson) ? 'input-error' : ''}
             >
-              <option value="">Select salesperson</option>
-              {userOptions.length === 0 && !loadingUsers && (
-                <option value="" disabled>(No users found)</option>
+              {currentUser?.username && (
+                <option value={currentUser.username}>Myself - {currentUser.username} ({currentUser.role})</option>
               )}
-              {/* If editing, keep showing current value even if not in userOptions */}
-              {form.salesperson && !userOptions.some(u => (u.full_name || u.username || u.email) === form.salesperson) && (
-                <option value={form.salesperson}>{form.salesperson} (current)</option>
-              )}
-              {userOptions.filter(u => u.role !== 'ADMIN').map(u => {
-                const label = u.full_name || u.username || u.email;
+              {userOptions.map(u => {
+                const label = u.username || '';
                 return (
                   <option key={u.id} value={label}>{label} ({u.role})</option>
                 );

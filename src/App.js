@@ -12,6 +12,7 @@ import Profile from './components/Profile';
 import { useState, useEffect, useMemo, useRef } from 'react';
 
 function App() {
+  const [navOpen, setNavOpen] = useState(false);
   const [tab, setTab] = useState(() => {
     try {
       const t = localStorage.getItem('crm:lastTab');
@@ -140,12 +141,26 @@ function App() {
   return (
     <>
       <header>
-        <div className="wrap" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px'}}>
+        <div className="wrap" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px', flexWrap:'wrap'}}>
           <div style={{display:'flex', alignItems:'center', gap:8}}>
             <img src="/assets/branding/logo.png" alt="Sreenidhi Fuels" width="32" height="32" style={{borderRadius:'50%', objectFit:'cover'}} onError={(e)=>{ e.currentTarget.style.display='none'; }} />
             <div style={{fontWeight:700,fontSize:'20px'}}>Sreenidhi CRM</div>
           </div>
-          <nav className="nav" id="nav" style={{display:'flex', alignItems:'center', gap:8}}>
+          {/* Mobile menu toggle */}
+          <button
+            className="nav-toggle"
+            aria-controls="nav"
+            aria-expanded={navOpen}
+            onClick={() => setNavOpen(v => !v)}
+            title={navOpen ? 'Close menu' : 'Open menu'}
+          >
+            {/* simple hamburger */}
+            <span style={{display:'inline-block', width:20, height:2, background:'#111', position:'relative'}}>
+              <span style={{content:'""', position:'absolute', left:0, right:0, top:-6, height:2, background:'#111'}}></span>
+              <span style={{content:'""', position:'absolute', left:0, right:0, top:6, height:2, background:'#111'}}></span>
+            </span>
+          </button>
+          <nav className={"nav" + (navOpen ? ' open' : '')} id="nav" style={{display:'flex', alignItems:'center', gap:8}}>
             {visibleTabs.map(t => (
               <button
                 key={t.key}

@@ -115,36 +115,54 @@ export default function Meetings({ perms }) {
   const [assigneeError, setAssigneeError] = useState('');
 
   useEffect(() => {
-    // When we learn the user role, prepare Assigned To accordingly
-    const labelOf = (u) => u?.full_name || u?.username || u?.email || '';
+    // Prepare Assigned To options and defaults for all roles (EMPLOYEE/OWNER/ADMIN)
     if (!currentUser) return;
-    if (currentUser.role === 'EMPLOYEE') {
-      // Default and lock to self
-      const self = labelOf(currentUser);
-      setForm(f => ({ ...f, assigned_to: self, assigned_to_user_id: currentUser.id }));
-    } else if (currentUser.role === 'OWNER' || currentUser.role === 'ADMIN') {
-      // Load OWNER+EMPLOYEE list, excluding admins and excluding self
-      let aborted = false;
-      async function loadAssignees() {
-        setAssigneeLoading(true); setAssigneeError('');
-        try {
-          const r = await fetch('/api/users-lookup?roles=OWNER,EMPLOYEE');
-          const data = await r.json();
-          if (aborted) return;
-          if (!r.ok) throw new Error(data?.error || 'Failed to load users');
-          const list = (Array.isArray(data) ? data : [])
-            .filter(u => (u.role === 'OWNER' || u.role === 'EMPLOYEE'));
-          setAssigneeOptions(list);
-        } catch (e) {
-          if (!aborted) setAssigneeError(String(e.message || e));
-        } finally {
-          if (!aborted) setAssigneeLoading(false);
+    let aborted = false;
+    async function loadAssignees() {
+      setAssigneeLoading(true); setAssigneeError('');
+      try {
+        const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+        const auth = token ? { Authorization: 'Bearer ' + token } : {};
+        const rolesParam = currentUser.role === 'ADMIN' ? 'OWNER,EMPLOYEE,ADMIN' : 'OWNER,EMPLOYEE';
+        const r = await fetch(`/api/users-lookup?roles=${rolesParam}`, { headers: auth });
+        const data = await r.json();
+        if (aborted) return;
+        if (!r.ok) throw new Error(data?.error || 'Failed to load users');
+        let list = (Array.isArray(data) ? data : []);
+        // For non-admin roles, only OWNER/EMPLOYEE should be visible
+        if (currentUser.role !== 'ADMIN') {
+          list = list.filter(u => (u.role === 'OWNER' || u.role === 'EMPLOYEE'));
         }
+        // Exclude self to avoid duplication with explicit "Myself" option
+        if (currentUser?.id) {
+          list = list.filter(u => u.id !== currentUser.id);
+        }
+        // Sort by role priority (ADMIN, EMPLOYEE, OWNER) then by username
+        const roleRank = (r) => (r === 'ADMIN' ? 0 : r === 'EMPLOYEE' ? 1 : r === 'OWNER' ? 2 : 3);
+        list.sort((a,b) => {
+          const rr = roleRank(a.role) - roleRank(b.role);
+          if (rr !== 0) return rr;
+          const ua = String(a.username || '').toLowerCase();
+          const ub = String(b.username || '').toLowerCase();
+          if (ua < ub) return -1; if (ua > ub) return 1; return 0;
+        });
+        setAssigneeOptions(list);
+        // Default to self when creating (not editing) if not already set
+        setForm(f => {
+          if (!f.assigned_to_user_id && !aborted && !editId && currentUser?.id) {
+            return { ...f, assigned_to_user_id: currentUser.id, assigned_to: currentUser.username || '' };
+          }
+          return f;
+        });
+      } catch (e) {
+        if (!aborted) setAssigneeError(String(e.message || e));
+      } finally {
+        if (!aborted) setAssigneeLoading(false);
       }
-      loadAssignees();
-      return () => { aborted = true; };
     }
-  }, [currentUser]);
+    loadAssignees();
+    return () => { aborted = true; };
+  }, [currentUser, editId]);
 
   // Search users for Assigned To filter (EMPLOYEE view uses combobox)
   async function searchUsers(qstr) {
@@ -360,7 +378,11 @@ export default function Meetings({ perms }) {
         }
       } else {
         // Create always starts as SCHEDULED
-        res = await fetch('/api/meetings', { method: 'POST', headers: { 'Content-Type': 'application/json', ...auth }, body: JSON.stringify({ ...payload, status: 'SCHEDULED' }) });
+        const createPayload = { ...payload, status: 'SCHEDULED' };
+        if (!createPayload.assignedToUserId && currentUser && currentUser.id) {
+          createPayload.assignedToUserId = currentUser.id;
+        }
+        res = await fetch('/api/meetings', { method: 'POST', headers: { 'Content-Type': 'application/json', ...auth }, body: JSON.stringify(createPayload) });
       }
       if (!res.ok) {
         const t = await res.json().catch(() => ({}));
@@ -642,26 +664,26 @@ export default function Meetings({ perms }) {
           </div>
           <div className="row">
             <label className="block">Assigned To</label>
-            {(currentUser?.role === 'OWNER' || currentUser?.role === 'ADMIN') ? (
+            {currentUser ? (
               <select
                 value={form.assigned_to_user_id}
                 onChange={e => {
                   const uid = e.target.value;
-                  const u = assigneeOptions.find(x => x.id === uid);
-                  const label = u ? (u.full_name || u.username || u.email) : '';
+                  const u = assigneeOptions.find(x => x.id === uid) || (currentUser && String(currentUser.id) === String(uid) ? currentUser : null);
+                  const label = u ? (u.username || '') : (currentUser?.username || '');
                   setForm(f => ({ ...f, assigned_to_user_id: uid, assigned_to: label }));
                 }}
               >
-                <option value="">Select assignee</option>
+                {currentUser && <option value={currentUser.id}>Myself - {currentUser.username} ({currentUser.role})</option>}
                 {assigneeLoading && <option value="" disabled>Loading…</option>}
                 {assigneeError && <option value="" disabled>{assigneeError}</option>}
                 {assigneeOptions.map(u => {
-                  const label = u.full_name || u.username || u.email;
+                  const label = u.username || '';
                   return <option key={u.id} value={u.id}>{label} ({u.role})</option>;
                 })}
               </select>
             ) : (
-              <input value={form.assigned_to} onChange={e => setForm(f => ({...f, assigned_to: e.target.value}))} placeholder="assignee" readOnly={currentUser?.role === 'EMPLOYEE'} />
+              <input value={form.assigned_to} onChange={e => setForm(f => ({...f, assigned_to: e.target.value}))} placeholder="assignee" />
             )}
           </div>
           <div className="row">
@@ -701,8 +723,8 @@ export default function Meetings({ perms }) {
             <button className="btn" type="button" style={{background:'#111',color:'#fff'}} onClick={sendTestEmailToMe} disabled={!currentUser || !currentUser.email} title={(!currentUser||!currentUser.email)?'Login or set email in profile':''}>Send test to me</button>
           </div>
         </div>
-        <div style={{display:'grid', gridTemplateColumns:'2fr 1fr 1fr 1fr', gap:12, marginBottom:8, alignItems:'end'}}>
-          <div style={{display:'flex', flexDirection:'column'}}>
+        <div className="grid cols-4" style={{marginBottom:8, alignItems:'end'}}>
+          <div style={{display:'flex', flexDirection:'column', gridColumn:'1 / span 2'}}>
             <label className="block">Search</label>
             <input placeholder="Client name, subject, location, or any ID (meeting/customer/opportunity/contract)" value={q} onChange={e => setQ(e.target.value)} />
           </div>
@@ -755,7 +777,7 @@ export default function Meetings({ perms }) {
                         const i = assignedActiveIndex >= 0 ? assignedActiveIndex : 0;
                         const u = assignedOpts[i];
                         if (u) {
-                          const label = u.full_name || u.username || u.email || u.id;
+                          const label = u.username || u.id;
                           setAssignedTo(label);
                           setAssignedToUserIdFilter(u.id);
                           setAssignedOpen(false);
@@ -766,7 +788,7 @@ export default function Meetings({ perms }) {
                       setAssignedOpen(false);
                     }
                   }}
-                  placeholder="type a name/email"
+                  placeholder="type a username"
                   aria-autocomplete="list"
                   aria-expanded={assignedOpen}
                   aria-controls="assigned-combobox-list"
@@ -784,6 +806,40 @@ export default function Meetings({ perms }) {
                 )}
                 {assignedOpen && (
                   <div id="assigned-combobox-list" role="listbox" style={{position:'absolute', top:'calc(100% + 4px)', left:0, right:0, background:'#fff', border:'1px solid #e5e7eb', borderRadius:8, maxHeight:200, overflowY:'auto', zIndex:20, boxShadow:'0 10px 24px rgba(0,0,0,0.14)'}}>
+                    {/* Synthetic quick options for clarity */}
+                    <div
+                      key="everyone"
+                      role="option"
+                      aria-selected={false}
+                      style={{padding:'6px 10px', cursor:'pointer', background:'#fff', display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:13, borderBottom:'1px solid #f3f4f6'}}
+                      onMouseDown={() => {
+                        setAssignedTo('');
+                        setAssignedToUserIdFilter('');
+                        setAssignedOpen(false);
+                      }}
+                      title="Everyone (all assignees)"
+                    >
+                      <span style={{fontWeight:600}}>Everyone (all assignees)</span>
+                      <span className="muted" style={{fontSize:11, color:'#6b7280'}}>clear</span>
+                    </div>
+                    {currentUser && (
+                      <div
+                        key="myself"
+                        role="option"
+                        aria-selected={false}
+                        style={{padding:'6px 10px', cursor:'pointer', background:'#fff', display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:13, borderBottom:'1px solid #f3f4f6'}}
+                        onMouseDown={() => {
+                          const label = currentUser.username || currentUser.id;
+                          setAssignedTo(label);
+                          setAssignedToUserIdFilter(currentUser.id);
+                          setAssignedOpen(false);
+                        }}
+                        title={`Myself - ${(currentUser.username||'me')} (${currentUser.role||'USER'})`}
+                      >
+                        <span style={{fontWeight:600}}>Myself - {currentUser.username || 'me'} ({currentUser.role || 'USER'})</span>
+                        <span className="muted" style={{fontSize:11, color:'#6b7280'}}>me</span>
+                      </div>
+                    )}
                     {assignedLoading ? (
                       <div style={{padding:'8px 10px', fontSize:12}}>Searching…</div>
                     ) : assignedError ? (
@@ -791,8 +847,10 @@ export default function Meetings({ perms }) {
                     ) : (assignedOpts || []).length === 0 ? (
                       <div style={{padding:'8px 10px', fontSize:12}} className="muted">No matches</div>
                     ) : (
-                      assignedOpts.map((u, i) => {
-                        const label = u.full_name || u.username || u.email || u.id;
+                      assignedOpts
+                        .filter(u => !currentUser || u.id !== currentUser.id) // avoid duplicating the synthetic "Myself"
+                        .map((u, i) => {
+                        const label = u.username || u.id;
                         return (
                           <div
                             key={u.id}

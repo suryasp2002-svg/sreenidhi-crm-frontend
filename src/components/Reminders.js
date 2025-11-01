@@ -88,24 +88,53 @@ export default function Reminders({ perms }) {
     })();
   }, []);
 
-  // When switching to Employee or Assigned tab, load users and default-select self
+  // When switching to Employee or Assigned tab, load users and set default selection
   useEffect(() => {
     if (activeTab !== 'employee' && activeTab !== 'assigned') return;
     let cancelled = false;
     (async () => {
       try {
         if (!users || users.length === 0) {
-          const arr = await fetchUsersForOverview();
-          if (!cancelled) setUsers(arr);
-          // Default select current user if present
+          // Load user list
+          // Employee Overview: only OWNER,EMPLOYEE selectable (server allowlist too)
+          // Assigned To: ADMIN may see ADMIN as well; OWNER/EMPLOYEE see OWNER,EMPLOYEE
+          const roles = (activeTab === 'employee') ? 'OWNER,EMPLOYEE' : ((myRole === 'ADMIN') ? 'OWNER,EMPLOYEE,ADMIN' : 'OWNER,EMPLOYEE');
           const token = localStorage.getItem('authToken') || localStorage.getItem('token');
-          const meRes = await fetch('/api/auth/me', { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined });
+          const resUsers = await fetch(`/api/users-lookup?roles=${encodeURIComponent(roles)}`, { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined });
+          const arr = resUsers.ok ? (await resUsers.json()) : [];
+          // Exclude ADMINs from Employee Overview for both OWNER and ADMIN (server disallows ADMIN in userId filter)
+          const filtered = (activeTab === 'employee')
+            ? (Array.isArray(arr) ? arr.filter(u => u.role !== 'ADMIN') : [])
+            : ((myRole === 'OWNER') ? (Array.isArray(arr) ? arr.filter(u => u.role !== 'ADMIN') : []) : (Array.isArray(arr) ? arr : []));
+          if (!cancelled) setUsers(filtered);
+          try {
+            // Build quick lookup for usernames by id for nicer chips
+            const idx = Object.create(null);
+            (filtered || []).forEach(u => { idx[u.id] = { username: u.username, email: u.email, full_name: u.full_name }; });
+            window.__userIndex = idx;
+          } catch {}
+          // Default selection:
+          // - Assigned tab: default to Everyone for all roles
+          // - Employee tab: ADMIN/OWNER -> Everyone; EMPLOYEE -> self if present
+          const meToken = localStorage.getItem('authToken') || localStorage.getItem('token');
+          const meRes = await fetch('/api/auth/me', { headers: meToken ? { 'Authorization': `Bearer ${meToken}` } : undefined });
           if (meRes.ok) {
             const me = await meRes.json();
             window.__currentUser = me;
             if (!selectedUserId) {
-              const found = arr.find(u => u.id === me.id);
-              if (found) setSelectedUserId(me.id);
+              const roleUpper = String(me.role).toUpperCase();
+              if (activeTab === 'assigned') {
+                // Always start at Everyone in Assigned To view
+                setSelectedUserId('');
+              } else {
+                // Employee Overview default
+                if (roleUpper === 'ADMIN' || roleUpper === 'OWNER') {
+                  setSelectedUserId(''); // Everyone
+                } else {
+                  const found = (filtered || []).find(u => u.id === me.id);
+                  if (found) setSelectedUserId(me.id);
+                }
+              }
             }
           }
         }
@@ -114,7 +143,7 @@ export default function Reminders({ perms }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [activeTab]);
+  }, [activeTab, myRole]);
 
   // Detect admin for Autofill visibility
   useEffect(() => {
@@ -157,11 +186,21 @@ export default function Reminders({ perms }) {
   }, []);
 
   function filterByScope(items, scopeKey) {
-    const { from, to } = scopes[scopeKey]();
-    return items.filter(it => {
-      const t = new Date(it.when);
-      return t >= from && t <= to;
-    });
+      const { from, to } = scopes[scopeKey]();
+      const todayStart = startOfDay(new Date());
+      return items.filter(it => {
+        const t = new Date(it.when);
+        const inRange = (t >= from && t <= to);
+        // For Today panels, also include overdue PENDING reminders (CALL/EMAIL) regardless of date
+        if (scopeKey === 'today') {
+          const kind = String(it.kind || '').toUpperCase();
+          const status = String(it.status || '').toUpperCase();
+          const isReminder = (kind === 'CALL' || kind === 'EMAIL');
+          const isOverduePending = (isReminder && status === 'PENDING' && t < todayStart);
+          return inRange || isOverduePending;
+        }
+        return inRange;
+      });
   }
 
   // Live data state for calls/emails
@@ -191,6 +230,7 @@ export default function Reminders({ perms }) {
     if (forUserId) params.set('userId', forUserId);
     if (opts.assignedToUserId) params.set('assignedToUserId', opts.assignedToUserId);
     if (opts.createdBySelf) params.set('createdBy', 'self');
+    if (opts.statusList && Array.isArray(opts.statusList) && opts.statusList.length) params.set('status', opts.statusList.join(','));
   const token = localStorage.getItem('authToken') || localStorage.getItem('token');
     const res = await fetch(`/api/reminders?${params.toString()}`, {
       signal,
@@ -230,27 +270,51 @@ export default function Reminders({ perms }) {
       setLoading(true);
       const { from: lf, to: lt } = scopeRange(leftScope);
       const { from: rf, to: rt } = scopeRange(rightScope);
-      // Scope by role/tab
+      const overdueFrom = startOfDay(addDays(new Date(), -180));
+      const overdueTo = endOfDay(addDays(new Date(), -1));
+      // Always scope My Overview to assignedToUserId = selfId
       const selfId = (window.__currentUser && window.__currentUser.id) || myUserId;
-      const isEmployee = myRole === 'EMPLOYEE';
-      const forUserId = (activeTab === 'overview' && (myRole === 'OWNER' || myRole === 'ADMIN')) ? (selfId || null) : null;
-      const assignedToSelfOpts = (activeTab === 'overview' && isEmployee && selfId) ? { assignedToUserId: selfId } : {};
-      const [leftCalls, rightCalls, leftEmails, rightEmails, leftMeetings, rightMeetings, leftCompletedToday] = await Promise.all([
-        fetchReminders('CALL', lf, lt, forUserId || null, ctrl.signal, assignedToSelfOpts),
-        fetchReminders('CALL', rf, rt, forUserId || null, ctrl.signal, assignedToSelfOpts),
-        fetchReminders('EMAIL', lf, lt, forUserId || null, ctrl.signal, assignedToSelfOpts),
-        fetchReminders('EMAIL', rf, rt, forUserId || null, ctrl.signal, assignedToSelfOpts),
-        fetchMeetings(lf, lt, 'SCHEDULED,RESCHEDULED', forUserId || null, ctrl.signal, assignedToSelfOpts),
-        fetchMeetings(rf, rt, 'SCHEDULED,RESCHEDULED', forUserId || null, ctrl.signal, assignedToSelfOpts),
-        // Only fetch COMPLETED meetings for today's left scope when in day mode
-        panelMode === 'day' && leftScope === 'today' ? fetchMeetings(lf, lt, 'COMPLETED', forUserId || null, ctrl.signal, assignedToSelfOpts) : Promise.resolve([]),
+      const assignedToSelfOpts = (activeTab === 'overview' && selfId) ? { assignedToUserId: selfId } : {};
+      const forUserId = null; // never use userId scoping for My Overview
+      const wantCreatedBy = (myRole === 'OWNER' || myRole === 'ADMIN');
+      const [
+        // Assigned-to-self in-scope
+        leftCalls, rightCalls, leftEmails, rightEmails,
+        // Created-by-self in-scope (OWNER/ADMIN)
+        leftCallsBy, rightCallsBy, leftEmailsBy, rightEmailsBy,
+        // Overdue pending (assigned-to-self)
+        overdueCalls, overdueEmails,
+        // Overdue pending (created-by-self)
+        overdueCallsBy, overdueEmailsBy,
+        // Meetings pools
+        leftMeetings, rightMeetings, leftCompletedToday
+      ] = await Promise.all([
+        fetchReminders('CALL', lf, lt, forUserId, ctrl.signal, assignedToSelfOpts),
+        fetchReminders('CALL', rf, rt, forUserId, ctrl.signal, assignedToSelfOpts),
+        fetchReminders('EMAIL', lf, lt, forUserId, ctrl.signal, assignedToSelfOpts),
+        fetchReminders('EMAIL', rf, rt, forUserId, ctrl.signal, assignedToSelfOpts),
+        // createdBy=self (only for OWNER/ADMIN)
+        wantCreatedBy ? fetchReminders('CALL', lf, lt, forUserId, ctrl.signal, { createdBySelf: true }) : Promise.resolve([]),
+        wantCreatedBy ? fetchReminders('CALL', rf, rt, forUserId, ctrl.signal, { createdBySelf: true }) : Promise.resolve([]),
+        wantCreatedBy ? fetchReminders('EMAIL', lf, lt, forUserId, ctrl.signal, { createdBySelf: true }) : Promise.resolve([]),
+        wantCreatedBy ? fetchReminders('EMAIL', rf, rt, forUserId, ctrl.signal, { createdBySelf: true }) : Promise.resolve([]),
+        // overdue PENDING (assigned-to-self)
+        fetchReminders('CALL', overdueFrom, overdueTo, forUserId, ctrl.signal, { ...assignedToSelfOpts, statusList: ['PENDING'] }),
+        fetchReminders('EMAIL', overdueFrom, overdueTo, forUserId, ctrl.signal, { ...assignedToSelfOpts, statusList: ['PENDING'] }),
+        // overdue PENDING (created-by-self for OWNER/ADMIN)
+        wantCreatedBy ? fetchReminders('CALL', overdueFrom, overdueTo, forUserId, ctrl.signal, { createdBySelf: true, statusList: ['PENDING'] }) : Promise.resolve([]),
+        wantCreatedBy ? fetchReminders('EMAIL', overdueFrom, overdueTo, forUserId, ctrl.signal, { createdBySelf: true, statusList: ['PENDING'] }) : Promise.resolve([]),
+        // meetings
+        fetchMeetings(lf, lt, 'SCHEDULED,RESCHEDULED', forUserId, ctrl.signal, assignedToSelfOpts),
+        fetchMeetings(rf, rt, 'SCHEDULED,RESCHEDULED', forUserId, ctrl.signal, assignedToSelfOpts),
+        panelMode === 'day' && leftScope === 'today' ? fetchMeetings(lf, lt, 'COMPLETED', forUserId, ctrl.signal, assignedToSelfOpts) : Promise.resolve([]),
       ]);
       // Merge unique by id keeping all in range; UI panels will still filter by scope
       if (liveCtrlRef.current === ctrl) {
-        const callsMap = new Map();
-        [...leftCalls, ...rightCalls].forEach(r => callsMap.set(r.id, r));
-        const emailsMap = new Map();
-        [...leftEmails, ...rightEmails].forEach(r => emailsMap.set(r.id, r));
+  const callsMap = new Map();
+  [...leftCalls, ...rightCalls, ...leftCallsBy, ...rightCallsBy, ...overdueCalls, ...overdueCallsBy].forEach(r => callsMap.set(r.id, r));
+  const emailsMap = new Map();
+  [...leftEmails, ...rightEmails, ...leftEmailsBy, ...rightEmailsBy, ...overdueEmails, ...overdueEmailsBy].forEach(r => emailsMap.set(r.id, r));
         const meetingsMap = new Map();
         // Merge only scheduled/rescheduled for both scopes into the live pool
         [...leftMeetings, ...rightMeetings].forEach(m => meetingsMap.set(m.id, m));
@@ -278,24 +342,31 @@ export default function Reminders({ perms }) {
   const [asEmails, setAsEmails] = useState([]);
   const [asMeetings, setAsMeetings] = useState([]);
   async function loadAssignedTo() {
-    if (!selectedUserId) return;
     try {
       setAsLoading(true); setAsError('');
       const { from: lf, to: lt } = scopeRange(leftScope);
       const { from: rf, to: rt } = scopeRange(rightScope);
+      const overdueFrom = startOfDay(addDays(new Date(), -180));
+      const overdueTo = endOfDay(addDays(new Date(), -1));
       const selfId = (window.__currentUser && window.__currentUser.id) || myUserId;
-      // We'll use createdBy=self intersected with assignedToUserId
-      const createdBySelf = { createdBy: 'self', assignedToUserId: selectedUserId };
-      const [lc, rc, le, re, lm, rm] = await Promise.all([
-        fetch(`/api/reminders?type=CALL&dateFrom=${encodeURIComponent(fmtSqlTsLocal(lf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(lt))}&createdBy=self&assignedToUserId=${encodeURIComponent(selectedUserId)}`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
-        fetch(`/api/reminders?type=CALL&dateFrom=${encodeURIComponent(fmtSqlTsLocal(rf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(rt))}&createdBy=self&assignedToUserId=${encodeURIComponent(selectedUserId)}`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
-        fetch(`/api/reminders?type=EMAIL&dateFrom=${encodeURIComponent(fmtSqlTsLocal(lf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(lt))}&createdBy=self&assignedToUserId=${encodeURIComponent(selectedUserId)}`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
-        fetch(`/api/reminders?type=EMAIL&dateFrom=${encodeURIComponent(fmtSqlTsLocal(rf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(rt))}&createdBy=self&assignedToUserId=${encodeURIComponent(selectedUserId)}`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
-        fetch(`/api/meetings?status=SCHEDULED,RESCHEDULED&dateFrom=${encodeURIComponent(fmtSqlTsLocal(lf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(lt))}&createdBy=self&assignedToUserId=${encodeURIComponent(selectedUserId)}&sort=starts_at_asc`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
-        fetch(`/api/meetings?status=SCHEDULED,RESCHEDULED&dateFrom=${encodeURIComponent(fmtSqlTsLocal(rf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(rt))}&createdBy=self&assignedToUserId=${encodeURIComponent(selectedUserId)}&sort=starts_at_asc`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
+      // createdBy=self (by default); if a specific user is selected, intersect with assignedToUserId
+      // Special case: OWNER/ADMIN with Everyone selected -> show all users' reminders/meetings (no createdBy=self filter)
+      const everyoneAll = (!selectedUserId && (myRole === 'OWNER' || myRole === 'ADMIN'));
+      const asgn = selectedUserId ? `&assignedToUserId=${encodeURIComponent(selectedUserId)}` : '';
+      const createdByParam = everyoneAll ? '' : '&createdBy=self';
+      const [lc, rc, le, re, lm, rm, lcOver, leOver] = await Promise.all([
+        fetch(`/api/reminders?type=CALL&dateFrom=${encodeURIComponent(fmtSqlTsLocal(lf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(lt))}${createdByParam}${asgn}`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
+        fetch(`/api/reminders?type=CALL&dateFrom=${encodeURIComponent(fmtSqlTsLocal(rf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(rt))}${createdByParam}${asgn}`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
+        fetch(`/api/reminders?type=EMAIL&dateFrom=${encodeURIComponent(fmtSqlTsLocal(lf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(lt))}${createdByParam}${asgn}`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
+        fetch(`/api/reminders?type=EMAIL&dateFrom=${encodeURIComponent(fmtSqlTsLocal(rf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(rt))}${createdByParam}${asgn}`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
+        fetch(`/api/meetings?status=SCHEDULED,RESCHEDULED&dateFrom=${encodeURIComponent(fmtSqlTsLocal(lf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(lt))}${createdByParam}${asgn}&sort=starts_at_asc`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
+        fetch(`/api/meetings?status=SCHEDULED,RESCHEDULED&dateFrom=${encodeURIComponent(fmtSqlTsLocal(rf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(rt))}${createdByParam}${asgn}&sort=starts_at_asc`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
+        // Overdue pending for assigned tab as well
+        fetch(`/api/reminders?type=CALL&status=PENDING&dateFrom=${encodeURIComponent(fmtSqlTsLocal(overdueFrom))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(overdueTo))}${createdByParam}${asgn}`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
+        fetch(`/api/reminders?type=EMAIL&status=PENDING&dateFrom=${encodeURIComponent(fmtSqlTsLocal(overdueFrom))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(overdueTo))}${createdByParam}${asgn}`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
       ]);
-      const callsMap = new Map(); [...lc, ...rc].forEach(r=>callsMap.set(r.id, r));
-      const emailsMap = new Map(); [...le, ...re].forEach(r=>emailsMap.set(r.id, r));
+      const callsMap = new Map(); [...lc, ...rc, ...lcOver].forEach(r=>callsMap.set(r.id, r));
+      const emailsMap = new Map(); [...le, ...re, ...leOver].forEach(r=>emailsMap.set(r.id, r));
       const meetingsMap = new Map(); [...lm, ...rm].forEach(m=>meetingsMap.set(m.id, m));
       setAsCalls(Array.from(callsMap.values()));
       setAsEmails(Array.from(emailsMap.values()));
@@ -304,7 +375,7 @@ export default function Reminders({ perms }) {
       setAsError(e.message || String(e));
     } finally { setAsLoading(false); }
   }
-  useEffect(() => { if (activeTab === 'assigned' && selectedUserId) loadAssignedTo(); }, [activeTab, selectedUserId, leftScope, rightScope]);
+  useEffect(() => { if (activeTab === 'assigned') loadAssignedTo(); }, [activeTab, selectedUserId, leftScope, rightScope]);
 
   function tokenHeader() {
     const token = localStorage.getItem('authToken') || localStorage.getItem('token');
@@ -320,7 +391,6 @@ export default function Reminders({ perms }) {
 
   // Employee-scoped loader mirroring main view
   async function loadEmployeeLive() {
-    if (!selectedUserId) return;
     try {
       if (empCtrlRef.current) {
         try { empCtrlRef.current.abort(); } catch {}
@@ -330,20 +400,31 @@ export default function Reminders({ perms }) {
       setEmpLoading(true);
       const { from: lf, to: lt } = scopeRange(leftScope);
       const { from: rf, to: rt } = scopeRange(rightScope);
-      const [leftCalls, rightCalls, leftEmails, rightEmails, leftMeetings, rightMeetings, leftCompletedToday] = await Promise.all([
-        fetchReminders('CALL', lf, lt, selectedUserId, ctrl.signal),
-        fetchReminders('CALL', rf, rt, selectedUserId, ctrl.signal),
-        fetchReminders('EMAIL', lf, lt, selectedUserId, ctrl.signal),
-        fetchReminders('EMAIL', rf, rt, selectedUserId, ctrl.signal),
-        fetchMeetings(lf, lt, 'SCHEDULED,RESCHEDULED', selectedUserId, ctrl.signal),
-        fetchMeetings(rf, rt, 'SCHEDULED,RESCHEDULED', selectedUserId, ctrl.signal),
-        panelMode === 'day' && leftScope === 'today' ? fetchMeetings(lf, lt, 'COMPLETED', selectedUserId, ctrl.signal) : Promise.resolve([]),
+      const overdueFrom = startOfDay(addDays(new Date(), -180));
+      const overdueTo = endOfDay(addDays(new Date(), -1));
+      const everyoneAll = (!selectedUserId && (myRole === 'OWNER' || myRole === 'ADMIN'));
+      const forUser = everyoneAll ? null : selectedUserId;
+      const [
+        leftCalls, rightCalls, leftEmails, rightEmails,
+        overdueCalls, overdueEmails,
+        leftMeetings, rightMeetings, leftCompletedToday
+      ] = await Promise.all([
+        fetchReminders('CALL', lf, lt, forUser, ctrl.signal),
+        fetchReminders('CALL', rf, rt, forUser, ctrl.signal),
+        fetchReminders('EMAIL', lf, lt, forUser, ctrl.signal),
+        fetchReminders('EMAIL', rf, rt, forUser, ctrl.signal),
+        // overdue PENDING for the selected user or Everyone
+        fetchReminders('CALL', overdueFrom, overdueTo, forUser, ctrl.signal, { statusList: ['PENDING'] }),
+        fetchReminders('EMAIL', overdueFrom, overdueTo, forUser, ctrl.signal, { statusList: ['PENDING'] }),
+        fetchMeetings(lf, lt, 'SCHEDULED,RESCHEDULED', forUser, ctrl.signal),
+        fetchMeetings(rf, rt, 'SCHEDULED,RESCHEDULED', forUser, ctrl.signal),
+        panelMode === 'day' && leftScope === 'today' ? fetchMeetings(lf, lt, 'COMPLETED', forUser, ctrl.signal) : Promise.resolve([]),
       ]);
       if (empCtrlRef.current === ctrl) {
-        const callsMap = new Map();
-        [...leftCalls, ...rightCalls].forEach(r => callsMap.set(r.id, r));
-        const emailsMap = new Map();
-        [...leftEmails, ...rightEmails].forEach(r => emailsMap.set(r.id, r));
+  const callsMap = new Map();
+  [...leftCalls, ...rightCalls, ...overdueCalls].forEach(r => callsMap.set(r.id, r));
+  const emailsMap = new Map();
+  [...leftEmails, ...rightEmails, ...overdueEmails].forEach(r => emailsMap.set(r.id, r));
         const meetingsMap = new Map();
         [...leftMeetings, ...rightMeetings].forEach(m => meetingsMap.set(m.id, m));
         setEmpLiveCalls(Array.from(callsMap.values()));
@@ -366,10 +447,10 @@ export default function Reminders({ perms }) {
 
   // Reload employee view when selection or scopes change
   useEffect(() => {
-    if (activeTab === 'employee' && selectedUserId) {
+    if (activeTab === 'employee') {
       loadEmployeeLive();
     }
-  }, [activeTab, selectedUserId, leftScope, rightScope, panelMode]);
+  }, [activeTab, selectedUserId, leftScope, rightScope, panelMode, myRole]);
 
   // Load recent history for CALL/EMAIL based on selected days
   async function loadHistory(forUserId, opts = {}) {
@@ -379,13 +460,24 @@ export default function Reminders({ perms }) {
       }
       const ctrl = new AbortController();
       histCtrlRef.current = ctrl;
-      const now = new Date();
-      const from = startOfDay(addDays(now, -historyDays));
-      const to = endOfDay(now);
-      const [calls, emails] = await Promise.all([
-        fetchReminders('CALL', from, to, forUserId || null, ctrl.signal, opts),
-        fetchReminders('EMAIL', from, to, forUserId || null, ctrl.signal, opts),
-      ]);
+  const now = new Date();
+  const from = startOfDay(addDays(now, -historyDays));
+  // If any terminal status (DONE/SENT/FAILED) is selected, include equal days into the future
+  const enabledStatuses = Object.entries(historyStatusFilter).filter(([,v]) => v).map(([k]) => k);
+  const includesTerminal = enabledStatuses.some(s => s === 'DONE' || s === 'SENT' || s === 'FAILED');
+  const to = includesTerminal ? endOfDay(addDays(now, historyDays)) : endOfDay(now);
+      // Build kind/status selections for server-side filtering
+      const enabledKinds = Object.entries(historyKindFilter).filter(([,v]) => v).map(([k]) => k);
+  // enabledStatuses already computed above
+      // If no kinds selected, clear history quickly
+      if (!enabledKinds.length) { setHistoryRawItems([]); return; }
+      const reqOpts = { ...opts, statusList: enabledStatuses };
+      const promises = [];
+      if (enabledKinds.includes('CALL')) promises.push(fetchReminders('CALL', from, to, forUserId || null, ctrl.signal, reqOpts));
+      else promises.push(Promise.resolve([]));
+      if (enabledKinds.includes('EMAIL')) promises.push(fetchReminders('EMAIL', from, to, forUserId || null, ctrl.signal, reqOpts));
+      else promises.push(Promise.resolve([]));
+      const [calls, emails] = await Promise.all(promises);
       if (histCtrlRef.current === ctrl) {
         const all = [...calls, ...emails].map(toItem).sort((a,b) => asDate(b.when) - asDate(a.when));
         setHistoryRawItems(all);
@@ -399,12 +491,22 @@ export default function Reminders({ perms }) {
   // Reload history when days change, and also when active tab/user changes
   useEffect(() => {
     const selfId = (window.__currentUser && window.__currentUser.id) || myUserId;
-    if (activeTab === 'assigned' && selectedUserId) {
-      // Only items created by me and assigned to the selected user
-      loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
-    } else if (activeTab === 'employee' && (myRole === 'OWNER' || myRole === 'ADMIN') && selectedUserId) {
-      // Owner/Admin view: history of the selected employee (legacy behavior)
-      loadHistory(selectedUserId);
+    if (activeTab === 'assigned') {
+      if (selectedUserId) {
+        // Only items created by me and assigned to the selected user
+        loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
+      } else {
+        // Everyone: items created by me across all assignees
+        loadHistory(null, { createdBySelf: true });
+      }
+    } else if (activeTab === 'employee' && (myRole === 'OWNER' || myRole === 'ADMIN')) {
+      if (selectedUserId) {
+        // History of the selected employee
+        loadHistory(selectedUserId);
+      } else {
+        // Everyone: history across all users
+        loadHistory(null);
+      }
     } else {
       // My Overview
       if (myRole === 'EMPLOYEE') {
@@ -416,7 +518,7 @@ export default function Reminders({ perms }) {
         loadHistory(forUserId);
       }
     }
-  }, [historyDays, activeTab, selectedUserId, myRole, myUserId]);
+  }, [historyDays, historyKindFilter, historyStatusFilter, activeTab, selectedUserId, myRole, myUserId]);
 
   // Derived filtered and paginated items
   const historyFiltered = React.useMemo(() => {
@@ -459,9 +561,11 @@ export default function Reminders({ perms }) {
       await fetch(`/api/reminders/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) }, body: JSON.stringify({ status: 'DONE' }) });
       const selfId = (window.__currentUser && window.__currentUser.id) || myUserId;
       if (activeTab === 'employee' && (myRole === 'OWNER' || myRole === 'ADMIN')) {
-        await Promise.all([loadEmployeeLive(), loadHistory(selectedUserId)]);
+        await Promise.all([loadEmployeeLive(), selectedUserId ? loadHistory(selectedUserId) : loadHistory(null)]);
       } else if (activeTab === 'assigned' && selectedUserId) {
         await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId })]);
+      } else if (activeTab === 'assigned' && !selectedUserId) {
+        await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true })]);
       } else {
         await Promise.all([loadLive(), myRole === 'EMPLOYEE' ? loadHistory(null, { createdBySelf: true }) : loadHistory(selfId)]);
       }
@@ -474,9 +578,11 @@ export default function Reminders({ perms }) {
       await fetch(`/api/reminders/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) }, body: JSON.stringify({ status: 'SENT' }) });
       const selfId = (window.__currentUser && window.__currentUser.id) || myUserId;
       if (activeTab === 'employee' && (myRole === 'OWNER' || myRole === 'ADMIN')) {
-        await Promise.all([loadEmployeeLive(), loadHistory(selectedUserId)]);
+        await Promise.all([loadEmployeeLive(), selectedUserId ? loadHistory(selectedUserId) : loadHistory(null)]);
       } else if (activeTab === 'assigned' && selectedUserId) {
         await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId })]);
+      } else if (activeTab === 'assigned' && !selectedUserId) {
+        await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true })]);
       } else {
         await Promise.all([loadLive(), myRole === 'EMPLOYEE' ? loadHistory(null, { createdBySelf: true }) : loadHistory(selfId)]);
       }
@@ -489,9 +595,11 @@ export default function Reminders({ perms }) {
       await fetch(`/api/reminders/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) }, body: JSON.stringify({ status: 'FAILED' }) });
       const selfId = (window.__currentUser && window.__currentUser.id) || myUserId;
       if (activeTab === 'employee' && (myRole === 'OWNER' || myRole === 'ADMIN')) {
-        await Promise.all([loadEmployeeLive(), loadHistory(selectedUserId)]);
+        await Promise.all([loadEmployeeLive(), selectedUserId ? loadHistory(selectedUserId) : loadHistory(null)]);
       } else if (activeTab === 'assigned' && selectedUserId) {
         await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId })]);
+      } else if (activeTab === 'assigned' && !selectedUserId) {
+        await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true })]);
       } else {
         await Promise.all([loadLive(), myRole === 'EMPLOYEE' ? loadHistory(null, { createdBySelf: true }) : loadHistory(selfId)]);
       }
@@ -607,7 +715,6 @@ export default function Reminders({ perms }) {
           leftScope={leftScope}
           rightScope={rightScope}
           onMarkDone={can.edit ? markReminderDone : undefined}
-          onEdit={can.edit ? openEdit : undefined}
           onMarkFailed={can.edit ? markReminderFailed : undefined}
           meetingLayout={'employee-my-overview'}
         />
@@ -623,7 +730,6 @@ export default function Reminders({ perms }) {
           leftScope={leftScope}
           rightScope={rightScope}
           onMarkDone={can.edit ? markEmailSent : undefined}
-          onEdit={can.edit ? openEdit : undefined}
           onMarkFailed={can.edit ? markReminderFailed : undefined}
           meetingLayout={'employee-my-overview'}
         />
@@ -638,13 +744,24 @@ export default function Reminders({ perms }) {
               <div style={{display:'flex', alignItems:'center', gap:10}}>
                 <span style={{fontSize:12, color:'#6b7280'}}>Employee</span>
                 <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{padding:'6px 8px', border:'1px solid #d1d5db', borderRadius:6, minWidth:220}}>
-                  <option value="">Select employee/owner</option>
-                  {users.map(u => {
-                    const label = u.full_name || u.username || u.email || u.id;
-                    const meId = (window.__currentUser && window.__currentUser.id) || null;
-                    const text = meId && u.id === meId ? `${label} (You)` : label;
-                    return <option key={u.id} value={u.id}>{text} · {u.role}</option>;
-                  })}
+                  <option value="">Everyone</option>
+                  {myUserId && (
+                    <option value={myUserId}>Myself - {(window.__currentUser && window.__currentUser.username) || 'me'} ({myRole || 'USER'})</option>
+                  )}
+                  {[...users]
+                    .filter(u => u && u.id !== myUserId)
+                    .sort((a,b) => {
+                      const rank = r => (r==='ADMIN'?0 : r==='EMPLOYEE'?1 : r==='OWNER'?2 : 3);
+                      const rr = rank(a.role) - rank(b.role);
+                      if (rr !== 0) return rr;
+                      const ua = String(a.username||'').toLowerCase();
+                      const ub = String(b.username||'').toLowerCase();
+                      if (ua < ub) return -1; if (ua > ub) return 1; return 0;
+                    })
+                    .map(u => {
+                      const label = u.username || u.id;
+                      return <option key={u.id} value={u.id}>{label} ({u.role})</option>;
+                    })}
                 </select>
               </div>
               <div style={{display:'flex', alignItems:'center', gap:10}}>
@@ -682,8 +799,7 @@ export default function Reminders({ perms }) {
             </div>
             <div style={{padding:12}}>
               {empError && <div style={{color:'#b91c1c', marginBottom:8}}>{empError}</div>}
-              {!selectedUserId && <div style={{color:'#6b7280'}}>Pick a user to view their upcoming meetings and tasks.</div>}
-              {selectedUserId && (
+              {(
                 <>
                   {/* Meetings row (employee-scoped) */}
                   <Section title="Meetings">
@@ -742,13 +858,26 @@ export default function Reminders({ perms }) {
           <div style={{border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', background:'#fff'}}>
             <div style={{padding:'10px 12px', borderBottom:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>
               <div style={{display:'flex', alignItems:'center', gap:10}}>
-                <span style={{fontSize:12, color:'#6b7280'}}>Employee</span>
-                <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{padding:'6px 8px', border:'1px solid #d1d5db', borderRadius:6, minWidth:220}}>
-                  <option value="">Select employee/owner</option>
-                  {users.map(u => {
-                    const label = u.full_name || u.username || u.email || u.id;
-                    return <option key={u.id} value={u.id}>{label} · {u.role}</option>;
-                  })}
+                <span style={{fontSize:12, color:'#6b7280'}}>Assignee</span>
+                <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{padding:'6px 8px', border:'1px solid #d1d5db', borderRadius:6, minWidth:260}}>
+                  <option value="">Everyone (all assignees)</option>
+                  {myUserId && (
+                    <option value={myUserId}>Myself - {(window.__currentUser && window.__currentUser.username) || 'me'} ({myRole || 'USER'})</option>
+                  )}
+                  {[...users]
+                    .filter(u => u && u.id !== myUserId)
+                    .sort((a,b) => {
+                      const rank = r => (r==='ADMIN'?0 : r==='EMPLOYEE'?1 : r==='OWNER'?2 : 3);
+                      const rr = rank(a.role) - rank(b.role);
+                      if (rr !== 0) return rr;
+                      const ua = String(a.username||'').toLowerCase();
+                      const ub = String(b.username||'').toLowerCase();
+                      if (ua < ub) return -1; if (ua > ub) return 1; return 0;
+                    })
+                    .map(u => {
+                      const label = u.username || u.id;
+                      return <option key={u.id} value={u.id}>{label} ({u.role})</option>;
+                    })}
                 </select>
               </div>
               <div style={{display:'flex', alignItems:'center', gap:10}}>
@@ -785,8 +914,7 @@ export default function Reminders({ perms }) {
             </div>
             <div style={{padding:12}}>
               {asError && <div style={{color:'#b91c1c', marginBottom:8}}>{asError}</div>}
-              {!selectedUserId && <div style={{color:'#6b7280'}}>Pick a user to view items you created and assigned to them.</div>}
-              {selectedUserId && (
+              {(
                 <>
                   <Section title="Meetings">
                     <TwoPanels
@@ -796,7 +924,7 @@ export default function Reminders({ perms }) {
                       rightItems={filterByScope(asMeetings.map(toMeetingItem), rightScope)}
                       leftScope={leftScope}
                       rightScope={rightScope}
-                      meetingLayout={'employee-my-overview'}
+                      meetingLayout={'assigned-to-overview'}
                     />
                   </Section>
                   <Section title="Calls">
@@ -810,7 +938,7 @@ export default function Reminders({ perms }) {
                       onEdit={openEdit}
                       onMarkDone={markReminderDone}
                       onMarkFailed={markReminderFailed}
-                      meetingLayout={'employee-my-overview'}
+                      meetingLayout={'assigned-to-overview'}
                     />
                   </Section>
                   <Section title="Emails">
@@ -824,7 +952,7 @@ export default function Reminders({ perms }) {
                       onEdit={openEdit}
                       onMarkDone={markEmailSent}
                       onMarkFailed={markReminderFailed}
-                      meetingLayout={'employee-my-overview'}
+                      meetingLayout={'assigned-to-overview'}
                     />
                   </Section>
                 </>
@@ -840,10 +968,18 @@ export default function Reminders({ perms }) {
           setPrefillReminder(null);
           if (activeTab === 'employee') {
             loadEmployeeLive();
-            loadHistory(selectedUserId);
+            if (myRole === 'OWNER' || myRole === 'ADMIN') {
+              if (selectedUserId) loadHistory(selectedUserId); else loadHistory(null);
+            } else {
+              loadHistory(null, { createdBySelf: true });
+            }
           } else if (activeTab === 'assigned') {
             loadAssignedTo();
-            if (selectedUserId) loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
+            if (selectedUserId) {
+              loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
+            } else {
+              loadHistory(null, { createdBySelf: true });
+            }
           } else {
             const selfId = (myRole === 'OWNER' || myRole === 'ADMIN') ? (myUserId || (window.__currentUser && window.__currentUser.id)) : null;
             loadLive();
@@ -856,10 +992,18 @@ export default function Reminders({ perms }) {
           closeEdit();
           if (activeTab === 'employee') {
             loadEmployeeLive();
-            loadHistory(selectedUserId);
+            if (myRole === 'OWNER' || myRole === 'ADMIN') {
+              if (selectedUserId) loadHistory(selectedUserId); else loadHistory(null);
+            } else {
+              loadHistory(null, { createdBySelf: true });
+            }
           } else if (activeTab === 'assigned') {
             loadAssignedTo();
-            if (selectedUserId) loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
+            if (selectedUserId) {
+              loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
+            } else {
+              loadHistory(null, { createdBySelf: true });
+            }
           } else {
             const selfId = (myRole === 'OWNER' || myRole === 'ADMIN') ? (myUserId || (window.__currentUser && window.__currentUser.id)) : null;
             loadLive();
@@ -994,7 +1138,7 @@ function Section({ title, children }) {
 
 function TwoPanels({ leftTitle, rightTitle, leftItems, rightItems, leftScope, rightScope, onMarkDone, onMarkFailed, onEdit, meetingLayout }) {
   return (
-    <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
+    <div className="two-panels">
       <Panel title={leftTitle} scopeKey={leftScope} items={leftItems} onMarkDone={onMarkDone} onMarkFailed={onMarkFailed} onEdit={onEdit} meetingLayout={meetingLayout} />
       <Panel title={rightTitle} scopeKey={rightScope} items={rightItems} onMarkDone={onMarkDone} onMarkFailed={onMarkFailed} onEdit={onEdit} meetingLayout={meetingLayout} />
     </div>
@@ -1013,6 +1157,7 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
     ? fmtDay(from)
     : `${fmtDay(from)} - ${fmtDay(to)}`;
   const empMyOverviewLayout = meetingLayout === 'employee-my-overview';
+  const assignedOverviewLayout = meetingLayout === 'assigned-to-overview';
 
   // Sort so active tasks appear first and completed (or terminal) statuses sink to the bottom.
   const sortedItems = useMemo(() => {
@@ -1053,7 +1198,7 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
         {sortedItems.map(it => (
           <div key={it.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', borderBottom:'1px solid #eef2f7'}}>
             {/* Left content area: media-row for Employee My Overview meetings; default for others */}
-            {empMyOverviewLayout && it.kind === 'MEETING' ? (
+            {(empMyOverviewLayout || assignedOverviewLayout) && it.kind === 'MEETING' ? (
               <div style={{flex:1, minWidth:0}}>
                 {(() => {
                   const f = fmtDateAndTime(it.when);
@@ -1064,8 +1209,10 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
                     ? { border:'1px solid #fecaca', background:'#fef2f2', color:'#991b1b' }
                     : { border:'1px solid #e5e7eb', background:'#fff', color:'#374151' };
                   const by = it.created_by_username || it.created_by_name || '';
+                  const toUser = it.assignee || it.assigned_to || '';
+                  const gridCols = assignedOverviewLayout ? '140px 1fr 240px' : '140px 1fr 200px';
                   return (
-                    <div style={{display:'grid', gridTemplateColumns:'140px 1fr 200px', gap:12, alignItems:'stretch'}}>
+                    <div style={{display:'grid', gridTemplateColumns:gridCols, gap:12, alignItems:'stretch'}}>
                       {/* Left: date + time on one line, then countdown */}
                       <div style={{display:'flex', flexDirection:'column', gap:6, paddingRight:12, borderRight:'2px solid #d1d5db', height:'100%', justifyContent:'center'}}>
                         <div style={{display:'flex', alignItems:'center', gap:8}}>
@@ -1090,12 +1237,15 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
                           <span title={it.title}>{it.title}</span>
                         </div>
                       </div>
-                      {/* Right: assigned by and status */}
+                      {/* Right: assigned chip and status */}
                       <div style={{display:'flex', flexDirection:'column', gap:6, alignItems:'flex-end'}}>
-                        {by ? (
-                          <div>
-                            <span style={{fontSize:12, color:'#6b7280', marginRight:6}}>Assigned by</span>
-                            <span style={{padding:'2px 8px', borderRadius:999, fontSize:12, fontWeight:800, background:'#ecfeff', color:'#155e75', border:'1px solid #a5f3fc'}}>@{by}</span>
+                        {(() => {
+                          const label = assignedOverviewLayout ? (it.assigned_to_username || toUser) : by;
+                          return label;
+                        })() ? (
+                          <div style={{whiteSpace:'nowrap'}}>
+                            <span style={{fontSize:12, color:'#6b7280', marginRight:6}}>{assignedOverviewLayout ? 'Assigned to' : 'Assigned by'}</span>
+                            <span style={{padding:'2px 8px', borderRadius:999, fontSize:12, fontWeight:800, background:'#ecfeff', color:'#155e75', border:'1px solid #a5f3fc'}}>@{assignedOverviewLayout ? (it.assigned_to_username || toUser) : by}</span>
                           </div>
                         ) : null}
                         <span style={badgeStyle(it.status)} className="badge">{chipIcon(it.kind, it.status)} {it.status}</span>
@@ -1104,7 +1254,7 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
                   );
                 })()}
               </div>
-            ) : empMyOverviewLayout && (it.kind === 'CALL' || it.kind === 'EMAIL') ? (
+            ) : (empMyOverviewLayout || assignedOverviewLayout) && (it.kind === 'CALL' || it.kind === 'EMAIL') ? (
               <div style={{flex:1, minWidth:0}}>
                 {(() => {
                   const f = fmtDateAndTime(it.when);
@@ -1114,11 +1264,13 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
                   const badgeTimer = isPast
                     ? { border:'1px solid #fecaca', background:'#fef2f2', color:'#991b1b' }
                     : { border:'1px solid #bbf7d0', background:'#ecfdf5', color:'#166534' };
-                  const by = it.created_by_name || '';
+                  const by = it.created_by_username || it.created_by_name || '';
                   const isEmail = String(it.kind).toUpperCase() === 'EMAIL';
                   const personOrEmail = isEmail ? (it.receiver_email || it.who || '-') : (it.person_name || it.who || '-');
+                  const toUser = it.assigned_to || '';
+                  const gridCols = assignedOverviewLayout ? '140px 1fr 240px' : '140px 1fr 200px';
                   return (
-                    <div style={{display:'grid', gridTemplateColumns:'140px 1fr 200px', gap:12, alignItems:'stretch'}}>
+                    <div style={{display:'grid', gridTemplateColumns:gridCols, gap:12, alignItems:'stretch'}}>
                       {/* Left: date + time line, then countdown */}
                       <div style={{display:'flex', flexDirection:'column', gap:6, paddingRight:12, borderRight:'2px solid #d1d5db', height:'100%', justifyContent:'center'}}>
                         <div style={{display:'flex', alignItems:'center', gap:8}}>
@@ -1142,13 +1294,16 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
                           <span title={it.title}>{it.title}</span>
                         </div>
                       </div>
-                      {/* Right: 3-line stack: 1) Assigned by  2) Status + Edit  3) Done/Sent + Failed */}
+                      {/* Right: 3-line stack: 1) Assigned (by/to)  2) Status + Edit  3) Done/Sent + Failed */}
                       <div style={{display:'flex', flexDirection:'column', gap:6, alignItems:'flex-end', justifyContent:'center'}}>
-                        {/* Line 1: Assigned by */}
-                        {by ? (
-                          <div style={{display:'flex', alignItems:'center', gap:8}}>
-                            <span style={{fontSize:12, color:'#6b7280'}}>Assigned by</span>
-                            <span style={{padding:'2px 8px', borderRadius:999, fontSize:12, fontWeight:800, background:'#ecfeff', color:'#155e75', border:'1px solid #a5f3fc'}}>@{by}</span>
+                        {/* Line 1: Assigned chip */}
+                        {(() => {
+                          const label = assignedOverviewLayout ? (it.assigned_to_username || toUser) : by;
+                          return label;
+                        })() ? (
+                          <div style={{display:'flex', alignItems:'center', gap:8, whiteSpace:'nowrap'}}>
+                            <span style={{fontSize:12, color:'#6b7280'}}>{assignedOverviewLayout ? 'Assigned to' : 'Assigned by'}</span>
+                            <span style={{padding:'2px 8px', borderRadius:999, fontSize:12, fontWeight:800, background:'#ecfeff', color:'#155e75', border:'1px solid #a5f3fc'}}>@{assignedOverviewLayout ? (it.assigned_to_username || toUser) : by}</span>
                           </div>
                         ) : null}
                         {/* Line 2: Status + Edit */}
@@ -1244,11 +1399,12 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
                             {(() => {
                               const hasIds = it.created_by_user_id && it.assigned_to_user_id;
                               const idsDiffer = hasIds && String(it.created_by_user_id) !== String(it.assigned_to_user_id);
-                              const labelsDiffer = !hasIds && it.created_by_name && it.assigned_to && String(it.created_by_name) !== String(it.assigned_to);
-                              return (idsDiffer || labelsDiffer) && it.created_by_name;
+                              const label = it.created_by_username || it.created_by_name;
+                              const labelsDiffer = !hasIds && label && it.assigned_to && String(label) !== String(it.assigned_to);
+                              return (idsDiffer || labelsDiffer) && label;
                             })() ? (
                               <span title="Assigned by" style={{padding:'1px 6px', borderRadius:999, fontSize:11, fontWeight:800, background:'#ecfeff', color:'#155e75', border:'1px solid #a5f3fc'}}>
-                                Assigned by {it.created_by_name}
+                                Assigned by {it.created_by_username || it.created_by_name}
                               </span>
                             ) : null}
                           </>
@@ -1260,7 +1416,7 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
               </div>
             )}
             {(() => {
-              if (empMyOverviewLayout && (it.kind === 'MEETING' || it.kind === 'CALL' || it.kind === 'EMAIL')) return null; // countdown/status/buttons rendered within the custom grid
+              if ((empMyOverviewLayout || assignedOverviewLayout) && (it.kind === 'MEETING' || it.kind === 'CALL' || it.kind === 'EMAIL')) return null; // countdown/status/buttons rendered within the custom grid
               const now = new Date();
               const whenDate = asDate(it.when);
               const isFuture = whenDate > now;
@@ -1369,6 +1525,9 @@ function badgeStyle(status) {
 // Map reminder row to UI item shape used by Panel
 // IMPORTANT: include full fields so Edit modal can prefill correctly
 function toItem(r) {
+  const userIdx = (typeof window !== 'undefined' && window.__userIndex) || {};
+  const byId = r.assigned_to_user_id && userIdx[r.assigned_to_user_id];
+  const assignedUserName = r.assigned_to_username || (byId && (byId.username || (byId.email ? byId.email.split('@')[0] : byId.full_name))) || '';
   return {
     id: r.id,
     title: r.title || (r.type + ' reminder'),
@@ -1386,12 +1545,17 @@ function toItem(r) {
     client_name: r.client_name || '',
     assigned_to: r.assigned_to || '',
     assigned_to_user_id: r.assigned_to_user_id || null,
+    assigned_to_username: assignedUserName,
     created_by_user_id: r.created_by_user_id || null,
+    created_by_username: r.created_by_username || '',
     created_by_name: r.created_by_full_name || r.created_by_username || r.created_by_email || r.created_by || '',
   };
 }
 
 function toMeetingItem(m) {
+  const userIdx = (typeof window !== 'undefined' && window.__userIndex) || {};
+  const byId = m.assigned_to_user_id && userIdx[m.assigned_to_user_id];
+  const assignedUserName = m.assigned_to_username || (byId && (byId.username || (byId.email ? byId.email.split('@')[0] : byId.full_name))) || '';
   return {
     id: m.id,
     title: m.subject || 'Meeting',
@@ -1400,6 +1564,7 @@ function toMeetingItem(m) {
     kind: 'MEETING',
     client_name: m.client_name || '',
     assignee: m.assigned_to || '',
+    assigned_to_username: assignedUserName,
     assigned_to_user_id: m.assigned_to_user_id || null,
     created_by_user_id: m.created_by_user_id || null,
     created_by_name: m.created_by_full_name || m.created_by_username || m.created_by_email || m.created_by || '',
@@ -1435,6 +1600,7 @@ function CreateReminderModal({ onClose, prefill, isAdmin }) {
   const [assignUserId, setAssignUserId] = useState('');
   const [myRole, setMyRole] = useState(null);
   const [myUserId, setMyUserId] = useState(null);
+  const [myUsername, setMyUsername] = useState('');
   // Client link (optional): choose an existing opportunity for this reminder
   const [clients, setClients] = useState([]);
   const [selectedOppId, setSelectedOppId] = useState('');
@@ -1458,23 +1624,41 @@ function CreateReminderModal({ onClose, prefill, isAdmin }) {
   }, { debounceMs: 150 });
 
   useEffect(() => {
-    // Fetch current user role (optional) and always fetch selectable users (OWNER,EMPLOYEE)
+    // Fetch current user and then selectable users; ensure ADMINs are included for admin
     (async () => {
+      let meLocal = null;
       try {
         const token = localStorage.getItem('authToken') || localStorage.getItem('token');
         const res = await fetch('/api/auth/me', { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined });
         if (res.ok) {
           const me = await res.json();
+          meLocal = me;
           setMyRole(me.role || null);
           setMyUserId(me.id || null);
+          setMyUsername(me.username || '');
         }
       } catch (_) {}
       try {
         const token = localStorage.getItem('authToken') || localStorage.getItem('token');
-        const r = await fetch('/api/users-lookup?roles=OWNER,EMPLOYEE', { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined });
+        const roleStr = String(meLocal?.role || myRole || '').toUpperCase();
+        const rolesParam = (roleStr === 'ADMIN') ? 'OWNER,EMPLOYEE,ADMIN' : 'OWNER,EMPLOYEE';
+        const r = await fetch(`/api/users-lookup?roles=${rolesParam}`, { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined });
         if (r.ok) {
-          const list = await r.json();
-          setAssignUsers(Array.isArray(list) ? list : []);
+          let list = await r.json();
+          list = Array.isArray(list) ? list : [];
+          // Exclude self to avoid duplication with explicit "Myself" option
+          const selfId = meLocal?.id || myUserId;
+          if (selfId) list = list.filter(u => u.id !== selfId);
+          // Sort by role priority (ADMIN, EMPLOYEE, OWNER) then username
+          const roleRank = (r) => (r === 'ADMIN' ? 0 : r === 'EMPLOYEE' ? 1 : r === 'OWNER' ? 2 : 3);
+          list.sort((a,b) => {
+            const rr = roleRank(a.role) - roleRank(b.role);
+            if (rr !== 0) return rr;
+            const ua = String(a.username || '').toLowerCase();
+            const ub = String(b.username || '').toLowerCase();
+            if (ua < ub) return -1; if (ua > ub) return 1; return 0;
+          });
+          setAssignUsers(list);
         }
       } catch (_) {}
       try {
@@ -1548,10 +1732,10 @@ function CreateReminderModal({ onClose, prefill, isAdmin }) {
       status: 'PENDING'
     };
     // Assignment semantics:
-    // - If a user is selected in dropdown, set both createdByUserId (create on behalf) and assignedToUserId (explicit assignee)
+    // - If a user is selected in dropdown, assign the reminder to that user (assignedToUserId)
+    // - Do NOT override createdByUserId; let the backend use the actual creator (current user)
     // - If "Myself" is selected (empty value), set assignedToUserId to current user
     if (assignUserId) {
-      payload.createdByUserId = assignUserId;
       payload.assignedToUserId = assignUserId;
     } else if (myUserId) {
       payload.assignedToUserId = myUserId;
@@ -1578,7 +1762,7 @@ function CreateReminderModal({ onClose, prefill, isAdmin }) {
           <button onClick={onClose} className="btn" style={{border:'1px solid #e5e7eb', background:'#fff', color:'#111', borderRadius:6, padding:'6px 10px'}}>Close</button>
         </div>
         <form onSubmit={handleSubmit}>
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+          <div className="form-grid-2">
             <div>
               <label style={{display:'block', fontSize:12, color:'#6b7280'}}>Type</label>
               <select value={type} onChange={e=>setType(e.target.value)} style={inputStyle()}>
@@ -1730,9 +1914,13 @@ function CreateReminderModal({ onClose, prefill, isAdmin }) {
             <div>
               <label style={{display:'block', fontSize:12, color:'#6b7280'}}>Assign To</label>
               <select value={assignUserId} onChange={e=>setAssignUserId(e.target.value)} style={inputStyle()}>
-                <option value="">Myself</option>
+                  {myUserId ? (
+                    <option value="">Myself - {myUsername || 'me'} ({myRole || 'USER'})</option>
+                  ) : (
+                    <option value="">Myself</option>
+                  )}
                 {assignUsers.map(u => {
-                  const label = u.full_name || u.username || u.email || u.id;
+                  const label = u.username || u.id;
                   return <option key={u.id} value={u.id}>{label} ({u.role})</option>;
                 })}
               </select>
@@ -2067,6 +2255,10 @@ function EditReminderModal({ item, onClose }) {
   phone: !isEmail ? normalizeIndianPhone(phone.trim()) : undefined,
       status
     };
+    // Include reassignment only when a specific user is chosen
+    if (assignUserId && String(assignUserId).trim().length) {
+      payload.assignedToUserId = assignUserId;
+    }
     // Update opportunity link if changed
     // Note: backend PUT currently does not accept opportunity_id change; keeping for future if needed
     try {
@@ -2093,7 +2285,7 @@ function EditReminderModal({ item, onClose }) {
           <button onClick={onClose} className="btn" style={{border:'1px solid #e5e7eb', background:'#fff', color:'#111', borderRadius:6, padding:'6px 10px'}}>Close</button>
         </div>
         <form onSubmit={handleSave}>
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+          <div className="form-grid-2">
             <div>
               <label style={{display:'block', fontSize:12, color:'#6b7280'}}>Type</label>
               <input value={isEmail ? 'EMAIL' : 'CALL'} readOnly style={{...inputStyle(), background:'#f9fafb'}} />
