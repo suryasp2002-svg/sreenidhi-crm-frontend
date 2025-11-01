@@ -27,9 +27,6 @@ header {
   box-shadow: 0 1px 8px rgba(0, 0, 0, 0.05);
 }
 
-/* Anchor dropdown nav to header container */
-header .wrap { position: relative; }
-
 .wrap {
   /* Use full viewport width to avoid horizontal scrolling for wide tables */
   max-width: 100%;
@@ -68,33 +65,9 @@ header .wrap { position: relative; }
 
 /* Mobile nav behavior (≤768px) */
 @media (max-width: 768px) {
-  /* Show compact hamburger at the top-right */
-  .nav-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-left: auto;          /* push to right */
-    width: 40px; height: 40px;  /* larger touch target */
-    padding: 0;                 /* square icon button */
-    flex: 0 0 auto;
-  }
-  /* Hide nav by default on small screens; reveal as dropdown near the toggle */
-  .nav {
-    display: none !important;
-    position: absolute;
-    right: 12px;
-    top: calc(100% + 8px);
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-    width: min(300px, calc(100% - 24px));
-    padding: 10px;
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.12);
-    z-index: 20;
-  }
+  .nav-toggle { display: inline-flex; align-items: center; justify-content: center; }
+  /* Hide nav by default on small screens; show when open */
+  .nav { display: none !important; width: 100%; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 8px; }
   .nav.open { display: flex !important; }
   .nav button { width: 100%; margin: 4px 0; }
 }
@@ -171,12 +144,23 @@ header .wrap { position: relative; }
   /* File input full width and media elements scale down */
   input[type="file"] { width: 100%; }
   img, video, canvas { max-width: 100%; height: auto; }
-  /* Generic buttons in content wrap become full-width for easier touch,
-     but keep the header hamburger and nav buttons sized appropriately */
-  .wrap button:not(.nav-toggle):not(.nav-btn) { width: 100%; }
-  .wrap button:not(.nav-toggle):not(.nav-btn) + button { margin-top: 8px; }
+  /* Generic buttons in content wrap become full-width for easier touch */
+  .wrap button { width: 100%; }
+  .wrap button + button { margin-top: 8px; }
   /* Stack typical form rows set as flex (defensive) */
   .row { display: flex; flex-direction: column; gap: 8px; }
+}
+
+/* Mobile header alignment: keep hamburger at the top-right and compact */
+@media (max-width: 768px) {
+  /* Ensure header buttons (especially hamburger) are not forced full-width */
+  header .wrap button,
+  header .wrap .btn,
+  header .wrap .nav-toggle { width: auto; margin-top: 0; }
+  /* Position the hamburger in the top-right corner of the header */
+  header .nav-toggle { position: absolute; right: 16px; top: 16px; z-index: 11; display: inline-flex; }
+  /* Leave room so the brand text doesn't overlap the hamburger */
+  header .wrap { padding-right: 56px; }
 }
 
 .card {
