@@ -20,6 +20,38 @@ function fmtDateTime(dt) {
   }
 }
 
+// Consistent local date parsing like Reminders
+function asDate(v) {
+  if (v instanceof Date) return v;
+  const s = String(v || '');
+  if (!s) return new Date(NaN);
+  if (/Z|[+-]\d{2}:\d{2}$/.test(s)) return new Date(s);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (m) {
+    const [, Y, Mo, Da, H, Mi, S] = m;
+    return new Date(+Y, +Mo - 1, +Da, +H, +Mi, +(S || 0), 0);
+  }
+  return new Date(s);
+}
+
+function formatDhm(diffMs) {
+  const abs = Math.abs(diffMs);
+  const d = Math.floor(abs / 86400000);
+  const remD = abs % 86400000;
+  const h = Math.floor(remD / 3600000);
+  const m = Math.floor((remD % 3600000) / 60000);
+  const mm = String(m).padStart(2, '0');
+  return `${d}d-${h}hr-${mm}m`;
+}
+
+function dueLeftInfo(when) {
+  const t = asDate(when);
+  const now = new Date();
+  const diff = t.getTime() - now.getTime();
+  const hm = formatDhm(diff);
+  return { state: diff < 0 ? 'past' : (diff === 0 ? 'now' : 'future'), hm };
+}
+
 function buildStartsAt(dateStr, timeStr) {
   if (!dateStr || !timeStr) return '';
   return `${dateStr} ${timeStr}:00`;
@@ -59,7 +91,7 @@ export default function Meetings({ perms }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [statusModal, setStatusModal] = useState({ open: false, toStatus: '', note: '' });
+  const [statusModal, setStatusModal] = useState({ open: false, toStatus: '', note: '', meetingId: '' });
   const [statusSelectValue, setStatusSelectValue] = useState('');
   const [pendingStatus, setPendingStatus] = useState({ toStatus: '', note: '' });
   // Email preview/send modal state
@@ -529,7 +561,7 @@ export default function Meetings({ perms }) {
     if (!editId) return; // creation path won't offer other statuses
     if (!val || val === form.status) return;
     // Open modal to collect a note
-    setStatusModal({ open: true, toStatus: val, note: '' });
+    setStatusModal({ open: true, toStatus: val, note: '', meetingId: '' });
   }
 
   async function confirmStatusChange() {
@@ -539,9 +571,37 @@ export default function Meetings({ perms }) {
       // Require a note for all status changes
       return;
     }
-    setStatusModal({ open: false, toStatus: '', note: '' });
+    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+    const auth = token ? { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+    // If a quick-action meetingId is present, apply immediately via API
+    if (statusModal.meetingId) {
+      const targetId = statusModal.meetingId;
+      try {
+        if (to === 'CANCELLED') {
+          const r = await fetch(`/api/meetings/${targetId}/cancel`, { method: 'PATCH', headers: auth, body: JSON.stringify({ reason: note, performed_by: 'user' }) });
+          if (!r.ok) throw new Error('Failed to cancel meeting');
+        } else if (to === 'COMPLETED') {
+          const r = await fetch(`/api/meetings/${targetId}/complete`, { method: 'PATCH', headers: auth, body: JSON.stringify({ performed_by: 'user', outcome: note }) });
+          if (!r.ok) throw new Error('Failed to complete meeting');
+        } else if (to === 'NO_SHOW' || to === 'RESCHEDULED') {
+          const cur = items.find(m => m.id === targetId);
+          const prefix = to === 'NO_SHOW' ? 'No-Show' : 'Rescheduled';
+          const newNotes = note ? `${cur?.notes ? cur.notes + '\n' : ''}${prefix}: ${note}` : cur?.notes;
+          const r = await fetch(`/api/meetings/${targetId}`, { method: 'PUT', headers: auth, body: JSON.stringify({ status: to, notes: newNotes, outcomeNotes: note }) });
+          if (!r.ok) throw new Error('Failed to update status');
+        }
+        // Close modal and refresh list
+        setStatusModal({ open: false, toStatus: '', note: '', meetingId: '' });
+        await fetchMeetings();
+      } catch (e) {
+        alert(String(e.message || e));
+        setStatusModal({ open: false, toStatus: '', note: '', meetingId: '' });
+      }
+      return;
+    }
+    // Else, in-edit flow: stage the change and apply on Save
+    setStatusModal({ open: false, toStatus: '', note: '', meetingId: '' });
     if (!editId) return;
-    // Stage the status change; actual persistence happens on Update
     setPendingStatus({ toStatus: to, note });
     setForm(f => ({ ...f, status: to }));
     setStatusSelectValue(to);
@@ -903,6 +963,7 @@ export default function Meetings({ perms }) {
               <th>Date & Time</th>
               <th>Location</th>
               <th>Assigned To</th>
+              <th>⏱ Time</th>
               <th>Status</th>
               <th>Action</th>
             </tr>
@@ -925,14 +986,26 @@ export default function Meetings({ perms }) {
                 <td>{fmtDateTime(m.starts_at || m.when_ts)}</td>
                 <td>{m.location || ''}</td>
                 <td>{m.assigned_to || ''}</td>
+                <td>
+                  {(() => {
+                    const info = dueLeftInfo(m.starts_at || m.when_ts);
+                    const past = info.state === 'past';
+                    const style = past
+                      ? { border:'1px solid #fecaca', background:'#fef2f2', color:'#991b1b', borderRadius:999, padding:'2px 6px', fontSize:11, fontWeight:700 }
+                      : { border:'1px solid #bbf7d0', background:'#ecfdf5', color:'#166534', borderRadius:999, padding:'2px 6px', fontSize:11, fontWeight:700 };
+                    return (
+                      <span title={(m.starts_at || m.when_ts) ? new Date(m.starts_at || m.when_ts).toLocaleString() : ''} style={style}>
+                        {past ? `Overdue by ${info.hm}` : `Starts in ${info.hm}`}
+                      </span>
+                    );
+                  })()}
+                </td>
                 <td>{m.status}</td>
                 <td>
                   <button className="btn" style={{background:'#f1c40f',color:'#222',marginRight:8, opacity: can.edit?1:0.5}} onClick={() => onEdit(m)} disabled={!can.edit}>Edit</button>
                   {m.status !== 'COMPLETED' && can.edit && (
                     <button className="btn" style={{background:'#2ecc71',color:'#fff',marginRight:8}} onClick={() => {
-                      onEdit(m); // load into form
-                      setStatusSelectValue('COMPLETED');
-                      setStatusModal({ open: true, toStatus: 'COMPLETED', note: '' });
+                      setStatusModal({ open: true, toStatus: 'COMPLETED', note: '', meetingId: m.id });
                     }}>Complete</button>
                   )}
                   <button className="btn" style={{background:'#2563eb',color:'#fff'}} onClick={() => openEmailModal(m)}>Email invite</button>
@@ -948,7 +1021,7 @@ export default function Meetings({ perms }) {
           <div className="modal" style={{maxWidth:640}}>
             <div className="modal-header">
               <div style={{fontWeight:600}}>Update Status</div>
-              <button className="btn ghost" type="button" onClick={() => setStatusModal({ open:false, toStatus:'', note:'' })}>Close</button>
+              <button className="btn ghost" type="button" onClick={() => setStatusModal({ open:false, toStatus:'', note:'', meetingId: '' })}>Close</button>
             </div>
             <div className="modal-body">
               <div className="row">

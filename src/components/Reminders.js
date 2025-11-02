@@ -19,6 +19,23 @@ function endOfWeek(d) { const x = startOfWeek(d); x.setDate(x.getDate() + 6); x.
 function startOfMonth(d) { const x = startOfDay(d); x.setDate(1); return x; }
 function endOfMonth(d) { const x = startOfMonth(d); x.setMonth(x.getMonth()+1); x.setDate(0); x.setHours(23,59,59,999); return x; }
 
+// Custom ranges for panels
+// Week range: the Monday-Sunday week that contains "tomorrow" (so on Sunday, it shows next week)
+function nextWeeksRangeFromToday() {
+  const today = new Date();
+  const tomorrow = addDays(today, 1);
+  const from = startOfWeek(tomorrow);
+  const to = endOfWeek(tomorrow);
+  return { from, to };
+}
+// Month range: the 3 weeks following that week (rolling window), i.e., [weekEnd+1 .. weekEnd+21]
+function threeWeeksAfterNextWeek() {
+  const wk = nextWeeksRangeFromToday();
+  const from = startOfDay(addDays(wk.to, 1));
+  const to = endOfDay(addDays(wk.to, 21));
+  return { from, to };
+}
+
 // Format a Date as local-time SQL timestamp (YYYY-MM-DD HH:mm:ss)
 function fmtSqlTsLocal(d) {
   const x = new Date(d);
@@ -45,8 +62,11 @@ function asDate(v) {
 const scopes = {
   today: () => ({ from: startOfDay(new Date()), to: endOfDay(new Date()) }),
   tomorrow: () => ({ from: startOfDay(addDays(new Date(), 1)), to: endOfDay(addDays(new Date(), 1)) }),
-  week: () => ({ from: startOfWeek(new Date()), to: endOfWeek(new Date()) }),
-  month: () => ({ from: startOfMonth(new Date()), to: endOfMonth(new Date()) }),
+  // For range mode, redefine semantics to meet product needs:
+  // - week: next Monday..Sunday (week of tomorrow)
+  // - month: next 3 weeks after that (rolling window)
+  week: () => nextWeeksRangeFromToday(),
+  month: () => threeWeeksAfterNextWeek(),
 };
 
 export default function Reminders({ perms }) {
@@ -145,6 +165,14 @@ export default function Reminders({ perms }) {
     return () => { cancelled = true; };
   }, [activeTab, myRole]);
 
+  // Align History defaults with Assigned To view: include PENDING by default when on Assigned tab
+  useEffect(() => {
+    // Only flip on entering the Assigned tab to avoid overriding user-made changes elsewhere
+    if (activeTab === 'assigned' && !historyStatusFilter.PENDING) {
+      setHistoryStatusFilter(f => ({ ...f, PENDING: true }));
+    }
+  }, [activeTab]);
+
   // Detect admin for Autofill visibility
   useEffect(() => {
     let cancelled = false;
@@ -162,28 +190,7 @@ export default function Reminders({ perms }) {
   const leftScope = useMemo(() => panelMode === 'day' ? 'today' : 'week', [panelMode]);
   const rightScope = useMemo(() => panelMode === 'day' ? 'tomorrow' : 'month', [panelMode]);
 
-  // Placeholder data per section while backend is not wired
-  const { meetingsData, callsData, emailsData } = useMemo(() => {
-    const now = new Date();
-    return {
-      meetingsData: [
-        { id: 'M1', title: 'Meet ABC Corp', when: addDays(now, 0), who: 'alice@sreenidhi.com', status: 'PENDING' },
-        { id: 'M2', title: 'Demo with Zenith', when: addDays(now, 1), who: 'bob@sreenidhi.com', status: 'PENDING' },
-        { id: 'M3', title: 'Review Q4 plan', when: addDays(now, 5), who: 'carol@sreenidhi.com', status: 'SENT' },
-        { id: 'M4', title: 'Kickoff Project X', when: addDays(now, 12), who: 'dave@sreenidhi.com', status: 'PENDING' },
-      ],
-      callsData: [
-        { id: 'C1', title: 'Call procurement - ABC', when: addDays(now, 0), who: 'alice@sreenidhi.com', status: 'PENDING' },
-        { id: 'C2', title: 'Follow-up call - XYZ', when: addDays(now, 2), who: 'ops@sreenidhi.com', status: 'PENDING' },
-        { id: 'C3', title: 'Vendor check-in', when: addDays(now, 7), who: 'ops@sreenidhi.com', status: 'SENT' },
-      ],
-      emailsData: [
-        { id: 'E1', title: 'Send quotation to ABC', when: addDays(now, 1), who: 'sales@sreenidhi.com', status: 'PENDING' },
-        { id: 'E2', title: 'Draft MSA notes', when: addDays(now, 3), who: 'legal@sreenidhi.com', status: 'PENDING' },
-        { id: 'E3', title: 'Nudge for PO', when: addDays(now, 9), who: 'sales@sreenidhi.com', status: 'FAILED' },
-      ],
-    };
-  }, []);
+  // No placeholder data: only real API data is used
 
   function filterByScope(items, scopeKey) {
       const { from, to } = scopes[scopeKey]();
@@ -209,6 +216,10 @@ export default function Reminders({ perms }) {
   const [liveEmails, setLiveEmails] = useState([]);
   const [liveMeetings, setLiveMeetings] = useState([]);
   const [todayCompletedMeetings, setTodayCompletedMeetings] = useState([]);
+  // Bulk email selection (Today & Tomorrow only)
+  const [selectionKind, setSelectionKind] = useState(null); // 'CALL' | 'EMAIL' | null
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [showBulkMail, setShowBulkMail] = useState(false);
   // History (recent calls/emails)
   const [historyRawItems, setHistoryRawItems] = useState([]);
   const [historyDays, setHistoryDays] = useState(30); // selectable: 7/14/30/90
@@ -384,8 +395,8 @@ export default function Reminders({ perms }) {
 
   useEffect(() => {
     if (activeTab !== 'overview') return;
-    // For OWNER/ADMIN, wait until self id is known to avoid loading mixed data
-    if ((myRole === 'OWNER' || myRole === 'ADMIN') && !myUserId) return;
+    // Wait until self id is known to avoid loading mixed data for all roles
+    if (!myUserId) return;
     loadLive();
   }, [activeTab, leftScope, rightScope, myRole, myUserId]);
 
@@ -492,11 +503,15 @@ export default function Reminders({ perms }) {
   useEffect(() => {
     const selfId = (window.__currentUser && window.__currentUser.id) || myUserId;
     if (activeTab === 'assigned') {
+      const everyoneAll = (!selectedUserId && (myRole === 'OWNER' || myRole === 'ADMIN'));
       if (selectedUserId) {
         // Only items created by me and assigned to the selected user
         loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
+      } else if (everyoneAll) {
+        // OWNER/ADMIN with Everyone: history across all creators and assignees
+        loadHistory(null);
       } else {
-        // Everyone: items created by me across all assignees
+        // EMPLOYEE (or non-admin) Everyone: keep created-by-self scope
         loadHistory(null, { createdBySelf: true });
       }
     } else if (activeTab === 'employee' && (myRole === 'OWNER' || myRole === 'ADMIN')) {
@@ -509,11 +524,11 @@ export default function Reminders({ perms }) {
       }
     } else {
       // My Overview
+      // Employees: History should reflect reminders assigned to self
       if (myRole === 'EMPLOYEE') {
-        // Total self-created history (for self and for others)
-        loadHistory(null, { createdBySelf: true });
+        loadHistory(selfId || null);
       } else {
-        // Owner/Admin My Overview: keep self history
+        // Owner/Admin My Overview: keep self history (assigned to self)
         const forUserId = (myRole === 'OWNER' || myRole === 'ADMIN') ? (selfId || null) : null;
         loadHistory(forUserId);
       }
@@ -565,9 +580,11 @@ export default function Reminders({ perms }) {
       } else if (activeTab === 'assigned' && selectedUserId) {
         await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId })]);
       } else if (activeTab === 'assigned' && !selectedUserId) {
-        await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true })]);
+        const everyoneAll = (myRole === 'OWNER' || myRole === 'ADMIN');
+        await Promise.all([loadAssignedTo(), everyoneAll ? loadHistory(null) : loadHistory(null, { createdBySelf: true })]);
       } else {
-        await Promise.all([loadLive(), myRole === 'EMPLOYEE' ? loadHistory(null, { createdBySelf: true }) : loadHistory(selfId)]);
+        // My Overview: employees -> assigned to self; owner/admin -> assigned to self
+        await Promise.all([loadLive(), loadHistory(selfId)]);
       }
     } catch (e) { console.error(e); }
   }
@@ -582,9 +599,10 @@ export default function Reminders({ perms }) {
       } else if (activeTab === 'assigned' && selectedUserId) {
         await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId })]);
       } else if (activeTab === 'assigned' && !selectedUserId) {
-        await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true })]);
+        const everyoneAll = (myRole === 'OWNER' || myRole === 'ADMIN');
+        await Promise.all([loadAssignedTo(), everyoneAll ? loadHistory(null) : loadHistory(null, { createdBySelf: true })]);
       } else {
-        await Promise.all([loadLive(), myRole === 'EMPLOYEE' ? loadHistory(null, { createdBySelf: true }) : loadHistory(selfId)]);
+        await Promise.all([loadLive(), loadHistory(selfId)]);
       }
     } catch (e) { console.error(e); }
   }
@@ -599,9 +617,10 @@ export default function Reminders({ perms }) {
       } else if (activeTab === 'assigned' && selectedUserId) {
         await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId })]);
       } else if (activeTab === 'assigned' && !selectedUserId) {
-        await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true })]);
+        const everyoneAll = (myRole === 'OWNER' || myRole === 'ADMIN');
+        await Promise.all([loadAssignedTo(), everyoneAll ? loadHistory(null) : loadHistory(null, { createdBySelf: true })]);
       } else {
-        await Promise.all([loadLive(), myRole === 'EMPLOYEE' ? loadHistory(null, { createdBySelf: true }) : loadHistory(selfId)]);
+        await Promise.all([loadLive(), loadHistory(selfId)]);
       }
     } catch (e) { console.error(e); }
   }
@@ -688,7 +707,7 @@ export default function Reminders({ perms }) {
           leftTitle={panelMode==='day' ? "Today's meetings" : 'This Week meetings'}
           rightTitle={panelMode==='day' ? "Tomorrow's meetings" : 'This Month meetings'}
           leftItems={filterByScope((() => {
-            const base = (liveMeetings.length ? liveMeetings.map(toMeetingItem) : meetingsData);
+            const base = (liveMeetings.length ? liveMeetings.map(toMeetingItem) : []);
             // Inject today's COMPLETED only into the left panel when viewing Today
             if (panelMode==='day' && leftScope==='today' && todayCompletedMeetings && todayCompletedMeetings.length) {
               const extra = todayCompletedMeetings.map(toMeetingItem);
@@ -698,7 +717,7 @@ export default function Reminders({ perms }) {
             }
             return base;
           })(), leftScope)}
-          rightItems={filterByScope((liveMeetings.length ? liveMeetings.map(toMeetingItem) : meetingsData), rightScope)}
+          rightItems={filterByScope((liveMeetings.length ? liveMeetings.map(toMeetingItem) : []), rightScope)}
           leftScope={leftScope}
           rightScope={rightScope}
           meetingLayout={'employee-my-overview'}
@@ -707,31 +726,83 @@ export default function Reminders({ perms }) {
 
       {/* Calls row */}
       <Section title="Calls">
+        {panelMode==='day' && (
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',margin:'4px 4px 8px',gap:8}}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <label style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12}}>
+                <input type="checkbox" checked={selectionKind==='CALL'} onChange={e=>{ setSelectedIds(new Set()); setSelectionKind(e.target.checked ? 'CALL' : null); }} />
+                Select calls
+              </label>
+              {selectionKind==='CALL' && selectedIds.size>0 && (
+                <span style={{fontSize:12,color:'#6b7280'}}>Selected: {selectedIds.size}</span>
+              )}
+            </div>
+            <div>
+              <button
+                type="button"
+                disabled={!(selectionKind==='CALL' && selectedIds.size>0)}
+                onClick={()=> setShowBulkMail(true)}
+                className="btn"
+                style={{border:'1px solid #e5e7eb',background:'#fff',color:'#111',borderRadius:6,padding:'6px 10px',fontWeight:600}}
+              >Email selected</button>
+            </div>
+          </div>
+        )}
         <TwoPanels
           leftTitle={panelMode==='day' ? "Today's calls" : 'This Week calls'}
           rightTitle={panelMode==='day' ? "Tomorrow's calls" : 'This Month calls'}
-          leftItems={filterByScope(liveCalls.length ? liveCalls.map(toItem) : callsData, leftScope)}
-          rightItems={filterByScope(liveCalls.length ? liveCalls.map(toItem) : callsData, rightScope)}
+          leftItems={filterByScope(liveCalls.length ? liveCalls.map(toItem) : [], leftScope)}
+          rightItems={filterByScope(liveCalls.length ? liveCalls.map(toItem) : [], rightScope)}
           leftScope={leftScope}
           rightScope={rightScope}
           onMarkDone={can.edit ? markReminderDone : undefined}
           onMarkFailed={can.edit ? markReminderFailed : undefined}
           meetingLayout={'employee-my-overview'}
+          selectionEnabled={panelMode==='day' && selectionKind==='CALL'}
+          selectedIds={selectedIds}
+          onToggleSelect={(id) => setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
+          selectableKinds={['CALL']}
         />
       </Section>
 
       {/* Emails row */}
       <Section title="Emails">
+        {panelMode==='day' && (
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',margin:'4px 4px 8px',gap:8}}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <label style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12}}>
+                <input type="checkbox" checked={selectionKind==='EMAIL'} onChange={e=>{ setSelectedIds(new Set()); setSelectionKind(e.target.checked ? 'EMAIL' : null); }} />
+                Select emails
+              </label>
+              {selectionKind==='EMAIL' && selectedIds.size>0 && (
+                <span style={{fontSize:12,color:'#6b7280'}}>Selected: {selectedIds.size}</span>
+              )}
+            </div>
+            <div>
+              <button
+                type="button"
+                disabled={!(selectionKind==='EMAIL' && selectedIds.size>0)}
+                onClick={()=> setShowBulkMail(true)}
+                className="btn"
+                style={{border:'1px solid #e5e7eb',background:'#fff',color:'#111',borderRadius:6,padding:'6px 10px',fontWeight:600}}
+              >Email selected</button>
+            </div>
+          </div>
+        )}
         <TwoPanels
           leftTitle={panelMode==='day' ? "Today's emails" : 'This Week emails'}
           rightTitle={panelMode==='day' ? "Tomorrow's emails" : 'This Month emails'}
-          leftItems={filterByScope(liveEmails.length ? liveEmails.map(toItem) : emailsData, leftScope)}
-          rightItems={filterByScope(liveEmails.length ? liveEmails.map(toItem) : emailsData, rightScope)}
+          leftItems={filterByScope(liveEmails.length ? liveEmails.map(toItem) : [], leftScope)}
+          rightItems={filterByScope(liveEmails.length ? liveEmails.map(toItem) : [], rightScope)}
           leftScope={leftScope}
           rightScope={rightScope}
           onMarkDone={can.edit ? markEmailSent : undefined}
           onMarkFailed={can.edit ? markReminderFailed : undefined}
           meetingLayout={'employee-my-overview'}
+          selectionEnabled={panelMode==='day' && selectionKind==='EMAIL'}
+          selectedIds={selectedIds}
+          onToggleSelect={(id) => setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
+          selectableKinds={['EMAIL']}
         />
       </Section>
         </>
@@ -971,22 +1042,44 @@ export default function Reminders({ perms }) {
             if (myRole === 'OWNER' || myRole === 'ADMIN') {
               if (selectedUserId) loadHistory(selectedUserId); else loadHistory(null);
             } else {
-              loadHistory(null, { createdBySelf: true });
+              const selfId = (window.__currentUser && window.__currentUser.id) || myUserId;
+              loadHistory(selfId);
             }
           } else if (activeTab === 'assigned') {
             loadAssignedTo();
             if (selectedUserId) {
               loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
             } else {
-              loadHistory(null, { createdBySelf: true });
+              const everyoneAll = (myRole === 'OWNER' || myRole === 'ADMIN');
+              if (everyoneAll) loadHistory(null); else loadHistory(null, { createdBySelf: true });
             }
           } else {
-            const selfId = (myRole === 'OWNER' || myRole === 'ADMIN') ? (myUserId || (window.__currentUser && window.__currentUser.id)) : null;
+            const selfId = (myUserId || (window.__currentUser && window.__currentUser.id)) || null;
             loadLive();
             loadHistory(selfId);
           }
         }} />)
       }
+      {showBulkMail && (
+        <BulkRemindersModal
+          onClose={async (didSend) => {
+            setShowBulkMail(false);
+            setSelectionKind(null);
+            setSelectedIds(new Set());
+            if (didSend) {
+              // refresh
+              await loadLive();
+            }
+          }}
+          selectedIds={Array.from(selectedIds)}
+          // Provide access to current items so modal can mark statuses after send
+          resolveItemsById={(ids) => {
+            const map = new Map();
+            [...(liveCalls||[]).map(toItem), ...(liveEmails||[]).map(toItem)].forEach(it => map.set(it.id, it));
+            return ids.map(id => map.get(id)).filter(Boolean);
+          }}
+        />
+      )}
       {can.edit && editRem && (
         <EditReminderModal item={editRem} onClose={() => {
           closeEdit();
@@ -995,17 +1088,19 @@ export default function Reminders({ perms }) {
             if (myRole === 'OWNER' || myRole === 'ADMIN') {
               if (selectedUserId) loadHistory(selectedUserId); else loadHistory(null);
             } else {
-              loadHistory(null, { createdBySelf: true });
+              const selfId = (window.__currentUser && window.__currentUser.id) || myUserId;
+              loadHistory(selfId);
             }
           } else if (activeTab === 'assigned') {
             loadAssignedTo();
             if (selectedUserId) {
               loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
             } else {
-              loadHistory(null, { createdBySelf: true });
+              const everyoneAll = (myRole === 'OWNER' || myRole === 'ADMIN');
+              if (everyoneAll) loadHistory(null); else loadHistory(null, { createdBySelf: true });
             }
           } else {
-            const selfId = (myRole === 'OWNER' || myRole === 'ADMIN') ? (myUserId || (window.__currentUser && window.__currentUser.id)) : null;
+            const selfId = (myUserId || (window.__currentUser && window.__currentUser.id)) || null;
             loadLive();
             loadHistory(selfId);
           }
@@ -1136,16 +1231,16 @@ function Section({ title, children }) {
   );
 }
 
-function TwoPanels({ leftTitle, rightTitle, leftItems, rightItems, leftScope, rightScope, onMarkDone, onMarkFailed, onEdit, meetingLayout }) {
+function TwoPanels({ leftTitle, rightTitle, leftItems, rightItems, leftScope, rightScope, onMarkDone, onMarkFailed, onEdit, meetingLayout, selectionEnabled, selectedIds, onToggleSelect, selectableKinds }) {
   return (
     <div className="two-panels">
-      <Panel title={leftTitle} scopeKey={leftScope} items={leftItems} onMarkDone={onMarkDone} onMarkFailed={onMarkFailed} onEdit={onEdit} meetingLayout={meetingLayout} />
-      <Panel title={rightTitle} scopeKey={rightScope} items={rightItems} onMarkDone={onMarkDone} onMarkFailed={onMarkFailed} onEdit={onEdit} meetingLayout={meetingLayout} />
+      <Panel title={leftTitle} scopeKey={leftScope} items={leftItems} onMarkDone={onMarkDone} onMarkFailed={onMarkFailed} onEdit={onEdit} meetingLayout={meetingLayout} selectionEnabled={selectionEnabled} selectedIds={selectedIds} onToggleSelect={onToggleSelect} selectableKinds={selectableKinds} />
+      <Panel title={rightTitle} scopeKey={rightScope} items={rightItems} onMarkDone={onMarkDone} onMarkFailed={onMarkFailed} onEdit={onEdit} meetingLayout={meetingLayout} selectionEnabled={selectionEnabled} selectedIds={selectedIds} onToggleSelect={onToggleSelect} selectableKinds={selectableKinds} />
     </div>
   );
 }
 
-function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meetingLayout }) {
+function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meetingLayout, selectionEnabled, selectedIds, onToggleSelect, selectableKinds }) {
   const [, forceTick] = useState(0);
   useEffect(() => {
     // refresh every 30s so countdown badges update
@@ -1156,6 +1251,22 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
   const rangeText = scopeKey === 'today' || scopeKey === 'tomorrow'
     ? fmtDay(from)
     : `${fmtDay(from)} - ${fmtDay(to)}`;
+  const isMonthScope = scopeKey === 'month';
+  const monthName = (d) => new Date(d).toLocaleDateString(undefined, { month: 'long' });
+  const nextMonthChip = (when) => {
+    if (!isMonthScope) return null;
+    const now = new Date();
+    const w = asDate(when);
+    if (w.getMonth() !== now.getMonth() || w.getFullYear() !== now.getFullYear()) {
+      const lab = monthName(w);
+      return (
+        <span title={`Falls in ${lab}`} style={{padding:'2px 8px', borderRadius:999, fontSize:11, fontWeight:800, background:'#fffbeb', color:'#92400e', border:'1px solid #fde68a'}}>
+          Next month — {lab}
+        </span>
+      );
+    }
+    return null;
+  };
   const empMyOverviewLayout = meetingLayout === 'employee-my-overview';
   const assignedOverviewLayout = meetingLayout === 'assigned-to-overview';
 
@@ -1196,7 +1307,16 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
           <div style={{padding:16, color:'#6b7280'}}>No items</div>
         )}
         {sortedItems.map(it => (
-          <div key={it.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', borderBottom:'1px solid #eef2f7'}}>
+          <div key={it.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', borderBottom:'1px solid #eef2f7', gap:10}}>
+            {selectionEnabled && (scopeKey==='today' || scopeKey==='tomorrow') && (!selectableKinds || selectableKinds.includes(String(it.kind).toUpperCase())) ? (
+              <input
+                type="checkbox"
+                checked={!!(selectedIds && selectedIds.has(it.id))}
+                onChange={() => onToggleSelect && onToggleSelect(it.id)}
+                style={{marginRight:4}}
+                aria-label={`Select ${it.title}`}
+              />
+            ) : null}
             {/* Left content area: media-row for Employee My Overview meetings; default for others */}
             {(empMyOverviewLayout || assignedOverviewLayout) && it.kind === 'MEETING' ? (
               <div style={{flex:1, minWidth:0}}>
@@ -1215,9 +1335,10 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
                     <div style={{display:'grid', gridTemplateColumns:gridCols, gap:12, alignItems:'stretch'}}>
                       {/* Left: date + time on one line, then countdown */}
                       <div style={{display:'flex', flexDirection:'column', gap:6, paddingRight:12, borderRight:'2px solid #d1d5db', height:'100%', justifyContent:'center'}}>
-                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                        <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
                           <span style={{fontWeight:700, color:'#111', fontSize:12}}>{f.dateText}</span>
                           <span style={{fontWeight:700, color:'#111', background:'#eef2ff', padding:'1px 6px', borderRadius:6, fontSize:12}}>{f.timeText}</span>
+                          {nextMonthChip(it.when)}
                         </div>
                         <div title={whenDate.toLocaleString()} style={{...badgeTimer, padding:'2px 8px', borderRadius:999, fontSize:11, width:'fit-content'}}>
                           ⏱ {timeLeftLabel(it.when)}
@@ -1273,9 +1394,10 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
                     <div style={{display:'grid', gridTemplateColumns:gridCols, gap:12, alignItems:'stretch'}}>
                       {/* Left: date + time line, then countdown */}
                       <div style={{display:'flex', flexDirection:'column', gap:6, paddingRight:12, borderRight:'2px solid #d1d5db', height:'100%', justifyContent:'center'}}>
-                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                        <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
                           <span style={{fontWeight:700, color:'#111', fontSize:12}}>{f.dateText}</span>
                           <span style={{fontWeight:700, color:'#111', background:'#eef2ff', padding:'1px 6px', borderRadius:6, fontSize:12}}>{f.timeText}</span>
+                          {nextMonthChip(it.when)}
                         </div>
                         <div title={whenDate.toLocaleString()} style={{...badgeTimer, padding:'2px 8px', borderRadius:999, fontSize:11, width:'fit-content'}}>
                           ⏱ {(() => { const info = dueLeftInfo(it.when); return info.state === 'past' ? `Overdue by ${info.hm}` : `Starts in ${info.hm}`; })()}
@@ -1374,6 +1496,7 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
                       <>
                         <span style={{fontWeight:700, color:'#111'}}>{f.dateText}</span>
                         <span style={{fontWeight:800, color:'#111', background:'#eef2ff', padding:'1px 6px', borderRadius:6}}>{f.timeText}</span>
+                        {nextMonthChip(it.when)}
                         {it.kind === 'MEETING' ? (
                           <>
                             {/* Default meeting layout (non-employee overview) */}
@@ -1428,7 +1551,8 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
               const isSched = it.status === 'SCHEDULED' || it.status === 'RESCHEDULED';
 
               // Show logic
-              const showMeetingTimer = (isTodayScope || isTomorrowScope) && isMeeting && isSched; // show both before/after for Today; for Tomorrow it will naturally be future only
+              // Show meeting timers for all scopes when status is active (SCHEDULED/RESCHEDULED)
+              const showMeetingTimer = isMeeting && isSched;
               const showReminderTimer = isTodayScope && isReminder && it.status === 'PENDING';
               const showTimer = showMeetingTimer || showReminderTimer;
 
@@ -2004,29 +2128,31 @@ function fmtDateAndTime(d) {
 function fmtDateTime(d) { const f = fmtDateAndTime(d); return `${f.dateText}, ${f.timeText}`; }
 function fmtDay(d) { const x = new Date(d); return x.toLocaleDateString(undefined, { weekday:'short', day:'2-digit', month:'short' }); }
 
+function formatDhm(diffMs) {
+  const abs = Math.abs(diffMs);
+  const d = Math.floor(abs / 86400000);
+  const remD = abs % 86400000;
+  const h = Math.floor(remD / 3600000);
+  const m = Math.floor((remD % 3600000) / 60000);
+  const mm = String(m).padStart(2, '0');
+  return `${d}d-${h}hr-${mm}m`;
+}
+
 function timeLeftLabel(when) {
   const t = asDate(when);
   const now = new Date();
   const diff = t.getTime() - now.getTime();
   const past = diff < 0;
-  const abs = Math.abs(diff);
-  const h = Math.floor(abs / 3600000);
-  const m = Math.floor((abs % 3600000) / 60000);
-  if (abs < 60000) return past ? 'Started now' : 'Starting now';
-  const hm = `${h ? `${h}h ` : ''}${m}m`;
-  return past ? `Started ${hm} ago` : `Starts in ${hm}`;
+  const label = formatDhm(diff);
+  return past ? `Started ${label} ago` : `Starts in ${label}`;
 }
 
 function dueLeftInfo(when) {
   const t = asDate(when);
   const now = new Date();
   const diff = t.getTime() - now.getTime();
-  const abs = Math.abs(diff);
-  const h = Math.floor(abs / 3600000);
-  const m = Math.floor((abs % 3600000) / 60000);
-  const hm = `${h ? `${h}h ` : ''}${m}m`;
-  if (abs < 60000) return { state: diff < 0 ? 'past' : 'now', hm: '0m' };
-  return { state: diff < 0 ? 'past' : 'future', hm };
+  const hm = formatDhm(diff);
+  return { state: diff < 0 ? 'past' : (diff === 0 ? 'now' : 'future'), hm };
 }
 
 // Styled tooltip with delay
@@ -2474,3 +2600,122 @@ function EditReminderModal({ item, onClose }) {
     </div>
   );
 }
+
+function BulkRemindersModal({ selectedIds, resolveItemsById, onClose }) {
+  const [includeClientEmails, setIncludeClientEmails] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [subject, setSubject] = useState('');
+  const [html, setHtml] = useState('');
+  const [toText, setToText] = useState('');
+  const [ccText, setCcText] = useState('');
+
+  async function fetchPreview(withClients) {
+    setError('');
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      const res = await fetch('/api/email/preview/reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ reminderIds: selectedIds, includeClientEmails: !!withClients })
+      });
+      if (!res.ok) {
+        const t = await res.json().catch(()=>({}));
+        throw new Error(t.error || 'Preview failed');
+      }
+      const data = await res.json();
+      setSubject(data.subject || 'Follow-ups');
+      setHtml(data.html || '');
+      if (!toText) {
+        const sug = Array.isArray(data.suggestedTo) ? data.suggestedTo : [];
+        setToText(sug.join(', '));
+      }
+    } catch (e) {
+      setError(e.message || String(e));
+    }
+  }
+
+  useEffect(() => { fetchPreview(includeClientEmails); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => { fetchPreview(includeClientEmails); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [includeClientEmails]);
+
+  function parseList(s) {
+    if (!s) return [];
+    return String(s).split(',').map(x => x.trim()).filter(Boolean);
+  }
+
+  async function handleSend() {
+    setBusy(true); setError('');
+    try {
+      const to = parseList(toText);
+      const cc = parseList(ccText);
+      if (!to.length) throw new Error('Please provide at least one recipient in To');
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      const res = await fetch('/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ to, cc, subject, html, remindersIds: selectedIds })
+      });
+      if (!res.ok) {
+        const t = await res.json().catch(()=>({}));
+        throw new Error(t.error || 'Send failed');
+      }
+      // Mark EMAIL reminders as SENT
+      try {
+        const items = resolveItemsById ? resolveItemsById(selectedIds) : [];
+        const token2 = localStorage.getItem('authToken') || localStorage.getItem('token');
+        await Promise.all(items
+          .filter(it => String(it.kind).toUpperCase() === 'EMAIL')
+          .map(it => fetch(`/api/reminders/${it.id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', ...(token2 ? { 'Authorization': `Bearer ${token2}` } : {}) }, body: JSON.stringify({ status: 'SENT' }) }))
+        );
+      } catch {}
+      onClose(true);
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:70}}>
+      <div style={{background:'#fff', borderRadius:12, width:'min(960px, 94vw)', maxHeight:'90vh', display:'flex', flexDirection:'column', boxShadow:'0 10px 30px rgba(0,0,0,0.2)'}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 16px', borderBottom:'1px solid #e5e7eb'}}>
+          <div style={{fontWeight:800, fontSize:18}}>Email Selected Reminders</div>
+          <button onClick={()=>onClose(false)} className="btn" style={{border:'1px solid #e5e7eb', background:'#fff', color:'#111', borderRadius:6, padding:'6px 10px'}}>Close</button>
+        </div>
+        <div style={{display:'grid', gridTemplateColumns:'320px 1fr', gap:0, minHeight:360}}>
+          <div style={{padding:14, borderRight:'1px solid #e5e7eb'}}>
+            <div style={{marginBottom:10}}>
+              <label style={{display:'block', fontSize:12, color:'#6b7280'}}>Subject</label>
+              <input value={subject} onChange={e=>setSubject(e.target.value)} style={{width:'100%', padding:'8px 10px', border:'1px solid #d1d5db', borderRadius:6}} />
+            </div>
+            <div style={{marginBottom:10}}>
+              <label style={{display:'block', fontSize:12, color:'#6b7280'}}>To</label>
+              <textarea value={toText} onChange={e=>setToText(e.target.value)} rows={3} placeholder="comma-separated emails" style={{width:'100%', padding:'8px 10px', border:'1px solid #d1d5db', borderRadius:6, resize:'vertical'}} />
+            </div>
+            <div style={{marginBottom:10}}>
+              <label style={{display:'block', fontSize:12, color:'#6b7280'}}>Cc (optional)</label>
+              <textarea value={ccText} onChange={e=>setCcText(e.target.value)} rows={2} placeholder="comma-separated emails" style={{width:'100%', padding:'8px 10px', border:'1px solid #d1d5db', borderRadius:6, resize:'vertical'}} />
+            </div>
+            <label style={{display:'inline-flex', alignItems:'center', gap:8, fontSize:12}}>
+              <input type="checkbox" checked={includeClientEmails} onChange={e=>setIncludeClientEmails(e.target.checked)} />
+              Include client emails (where available)
+            </label>
+            {error && <div style={{color:'#b91c1c', marginTop:10}}>{error}</div>}
+            <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:16}}>
+              <button type="button" onClick={()=>onClose(false)} className="btn" style={{border:'1px solid #e5e7eb', background:'#fff', color:'#111', borderRadius:6, padding:'8px 14px'}}>Cancel</button>
+              <button type="button" disabled={busy} onClick={handleSend} className="btn" style={{background:'#111', color:'#fff', border:'1px solid #111', borderRadius:6, padding:'8px 14px', fontWeight:700}}>{busy ? 'Sending…' : 'Send Email'}</button>
+            </div>
+          </div>
+          <div style={{padding:0, background:'#f9fafb'}}>
+            <div style={{padding:'10px 12px', fontSize:12, color:'#6b7280', borderBottom:'1px solid #e5e7eb'}}>Preview</div>
+            <div style={{padding:0, overflow:'auto', maxHeight:'calc(90vh - 140px)'}}>
+              <div dangerouslySetInnerHTML={{ __html: html }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
