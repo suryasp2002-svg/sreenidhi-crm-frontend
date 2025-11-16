@@ -1,0 +1,27 @@
+{
+  "name": "postgresql-project",
+  "version": "1.0.0",
+  "description": "A project that utilizes a PostgreSQL database.",
+  "main": "src/app.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/app.js"
+  },
+  "dependencies": {
+    "pg": "^8.7.1"
+  },
+  "devDependencies": {
+    "typescript": "^4.5.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/postgresql-project.git"
+  },
+  "keywords": [
+    "postgresql",
+    "database",
+    "typescript"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}

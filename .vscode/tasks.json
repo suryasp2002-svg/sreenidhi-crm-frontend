@@ -1,0 +1,938 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start server to validate changes",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"$env:SUPPRESS_DB_LOG='1'; node server/index.js"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Start Server (CRM)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"start",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (check)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint-stylish"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Start server to validate changes",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"$env:SUPPRESS_DB_LOG='1'; node server/index.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (check)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint-stylish"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Start server to validate changes",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"$env:SUPPRESS_DB_LOG='1'; node server/index.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Start Server (CRM)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"start",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			],
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "DB migrate (server)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"migrate",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Start Server (CRM) - temp",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"start",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			],
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (check) - temp",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Restart Server (CRM) - temp",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"start",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			],
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "DB migrate (server) - rerun",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"migrate",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Start server to validate changes (foreground)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"node server/index.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (check) - temp 2",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Start server to validate changes (foreground)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"node server/index.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (validate validators)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint - stylish"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (validate validators)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint - stylish"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (validate validators)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "DB migrate (server) - apply profile schema",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"migrate",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Start server to validate changes (foreground) - profile",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"node server/index.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (validate validators)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "DB migrate (server) - apply profile schema",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"migrate",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (validate validators)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (validate validators)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$tsc"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "DB migrate (server) - rerun",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"migrate",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (validate validators)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Start Server (CRM) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"start",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			],
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "DB migrate (server) - rerun",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"migrate",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Start server to validate changes (foreground) - profile",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"node server/index.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "DB migrate (server) - rerun",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"migrate",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Start server to validate changes (foreground) - profile",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"node server/index.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "DB migrate (server) - apply new view",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"migrate",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			]
+		},
+		{
+			"label": "DB migrate (server) - apply fule_lots view",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"migrate",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			]
+		},
+		{
+			"label": "DB migrate (server) - apply physical rename",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"migrate",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\server"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		},
+		{
+			"label": "Client - Build (check) - run once",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"c:\\Users\\splog\\OneDrive\\Documents\\sreenidhi 2crm\\sreenidhi-crm-project-root\\client"
+			]
+		}
+	]
+}
