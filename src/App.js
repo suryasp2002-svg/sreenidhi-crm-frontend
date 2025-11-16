@@ -9,6 +9,7 @@ import Targets from './components/Targets';
 import Login from './components/Login';
 import EmployeeControl from './components/EmployeeControl';
 import Profile from './components/Profile';
+import FuelOps from './components/FuelOps';
 import { useState, useEffect, useMemo, useRef } from 'react';
 
 function App() {
@@ -81,6 +82,7 @@ function App() {
       { key: 'Meetings', label: 'Meetings' },
       { key: 'Reminders', label: 'Reminders' },
       { key: 'Targets', label: 'Targets' },
+      { key: 'FuelOps', label: 'Fuel Ops' },
     ];
     if (user && (user.role === 'OWNER' || user.role === 'ADMIN')) {
       baseTabs.push({ key: 'EmployeeControl', label: user.role === 'ADMIN' ? 'User Control' : 'Employee Control' });
@@ -88,7 +90,7 @@ function App() {
     if (user && (user.role === 'EMPLOYEE' || user.role === 'OWNER') && permissions) {
       const tabKeys = Object.keys(permissions.tabs || {});
       if (tabKeys.length > 0) {
-        return baseTabs.filter(t => t.key === 'EmployeeControl' || t.key === 'Profile' || permissions.tabs[t.key]);
+        return baseTabs.filter(t => t.key === 'EmployeeControl' || t.key === 'Profile' || t.key === 'FuelOps' || permissions.tabs[t.key]);
       }
     }
     return baseTabs;
@@ -184,6 +186,7 @@ function App() {
   {tab === 'Meetings' && <Meetings perms={(user?.role === 'EMPLOYEE' || user?.role === 'OWNER') ? permissions : null} />}
   {tab === 'Reminders' && <Reminders perms={(user?.role === 'EMPLOYEE' || user?.role === 'OWNER') ? permissions : null} />}
   {tab === 'Targets' && <Targets perms={(user?.role === 'EMPLOYEE' || user?.role === 'OWNER') ? permissions : null} />}
+  {tab === 'FuelOps' && <FuelOps />}
   {tab === 'Profile' && (
     <Profile token={localStorage.getItem('authToken')} />
   )}

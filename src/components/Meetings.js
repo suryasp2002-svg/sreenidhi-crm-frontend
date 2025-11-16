@@ -125,6 +125,7 @@ export default function Meetings({ perms }) {
     date: '',
     time: '',
     location: '',
+    meeting_link: '',
     person_name: '',
     contact_phone: '',
     notes: '',
@@ -276,7 +277,7 @@ export default function Meetings({ perms }) {
 
   function resetForm() {
     setEditId(null);
-    setForm({ id: '', customer_id: '', opportunity_id: '', contract_id: '', subject: '', date: '', time: '', location: '', person_name: '', contact_phone: '', notes: '', status: 'SCHEDULED', assigned_to: '', assigned_to_user_id: '', created_by: '' });
+    setForm({ id: '', customer_id: '', opportunity_id: '', contract_id: '', subject: '', date: '', time: '', location: '', meeting_link: '', person_name: '', contact_phone: '', notes: '', status: 'SCHEDULED', assigned_to: '', assigned_to_user_id: '', created_by: '' });
     setStatusSelectValue('');
     setPendingStatus({ toStatus: '', note: '' });
     // Re-apply default for employee
@@ -370,6 +371,7 @@ export default function Meetings({ perms }) {
       subject: form.subject.trim(),
       starts_at,
       location: form.location || undefined,
+      meeting_link: form.meeting_link || undefined,
       person_name: form.person_name || undefined,
       contact_phone: form.contact_phone || undefined,
       // status/notes handled separately for status transitions
@@ -448,6 +450,7 @@ export default function Meetings({ perms }) {
       subject: m.subject || '',
       date, time,
       location: m.location || '',
+      meeting_link: m.meeting_link || '',
       person_name: m.person_name || '',
       contact_phone: m.contact_phone || '',
       notes: m.notes || '',
@@ -520,7 +523,9 @@ export default function Meetings({ perms }) {
       const r = await fetch('/api/email/send', { method: 'POST', headers: auth, body: JSON.stringify({ to: toList, cc: ccList, subject: emailModal.subject || 'Meeting', html: emailModal.html || '<p>(no content)</p>', meetingId: emailModal.meetingId }) });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data?.error || 'Failed to send email');
-      setEmailModal({ open: false, to: '', cc: '', subject: '', html: '', meetingId: '', loading: false, error: '', sent: true });
+  setEmailModal({ open: false, to: '', cc: '', subject: '', html: '', meetingId: '', loading: false, error: '', sent: true });
+  // Refresh list to reflect updated emails sent count
+  try { await fetchMeetings(); } catch {}
     } catch (e) {
       setEmailModal(mod => ({ ...mod, loading: false, error: String(e.message || e) }));
     }
@@ -747,6 +752,10 @@ export default function Meetings({ perms }) {
             )}
           </div>
           <div className="row">
+            <label className="block">Meeting Link (optional)</label>
+            <input value={form.meeting_link} onChange={e => setForm(f => ({ ...f, meeting_link: e.target.value }))} placeholder="https://..." />
+          </div>
+          <div className="row">
             <label className="block">Status {editId ? (<span className="muted" style={{marginLeft:8,fontWeight:400}}>(Current: {form.status})</span>) : null}</label>
             {editId ? (
               <select
@@ -958,7 +967,7 @@ export default function Meetings({ perms }) {
           <thead>
             <tr>
               <th>Client Name</th>
-              <th>Opportunity</th>
+              <th>Meeting ID</th>
               <th>Subject</th>
               <th>Date & Time</th>
               <th>Location</th>
@@ -981,7 +990,7 @@ export default function Meetings({ perms }) {
                   </span>
                   {m.client_name || ''}
                 </td>
-                <td>{m.opportunity_id || ''}</td>
+                <td>{m.id || ''}</td>
                 <td>{m.subject}</td>
                 <td>{fmtDateTime(m.starts_at || m.when_ts)}</td>
                 <td>{m.location || ''}</td>
@@ -1008,7 +1017,10 @@ export default function Meetings({ perms }) {
                       setStatusModal({ open: true, toStatus: 'COMPLETED', note: '', meetingId: m.id });
                     }}>Complete</button>
                   )}
-                  <button className="btn" style={{background:'#2563eb',color:'#fff'}} onClick={() => openEmailModal(m)}>Email invite</button>
+                  <button className="btn" style={{background:'#2563eb',color:'#fff', marginRight:8}} onClick={() => openEmailModal(m)}>Email invite</button>
+                  <span className="muted" title="Number of email invites sent for this meeting" style={{fontSize:12}}>
+                    {`Sent: ${Number.isFinite(Number(m.emails_sent_count)) ? Number(m.emails_sent_count) : 0}`}
+                  </span>
                 </td>
               </tr>
             ))}

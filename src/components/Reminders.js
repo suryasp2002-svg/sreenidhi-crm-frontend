@@ -216,6 +216,10 @@ export default function Reminders({ perms }) {
   const [liveEmails, setLiveEmails] = useState([]);
   const [liveMeetings, setLiveMeetings] = useState([]);
   const [todayCompletedMeetings, setTodayCompletedMeetings] = useState([]);
+  // Summary counts for Delayed/Today/Tomorrow buckets
+  const [summaryBuckets, setSummaryBuckets] = useState(null);
+  const [overviewTotals, setOverviewTotals] = useState(null);
+  const [empOverviewTotals, setEmpOverviewTotals] = useState(null);
   // Bulk email selection (Today & Tomorrow only)
   const [selectionKind, setSelectionKind] = useState(null); // 'CALL' | 'EMAIL' | null
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -334,6 +338,7 @@ export default function Reminders({ perms }) {
         setLiveMeetings(Array.from(meetingsMap.values()));
         // Keep today's COMPLETED meetings separate to avoid cross-panel pollution/flicker
         setTodayCompletedMeetings(Array.isArray(leftCompletedToday) ? leftCompletedToday : []);
+        try { await loadSummary(); } catch {}
       }
     } catch (e) {
       if (e && (e.name === 'AbortError' || e.code === 20)) return; // ignore aborts
@@ -360,11 +365,12 @@ export default function Reminders({ perms }) {
       const overdueFrom = startOfDay(addDays(new Date(), -180));
       const overdueTo = endOfDay(addDays(new Date(), -1));
       const selfId = (window.__currentUser && window.__currentUser.id) || myUserId;
-      // createdBy=self (by default); if a specific user is selected, intersect with assignedToUserId
-      // Special case: OWNER/ADMIN with Everyone selected -> show all users' reminders/meetings (no createdBy=self filter)
-      const everyoneAll = (!selectedUserId && (myRole === 'OWNER' || myRole === 'ADMIN'));
+      // Filtering rules:
+      // - OWNER/ADMIN: always drop createdBy=self restriction for Assigned To view (both Everyone and specific assignee)
+      // - EMPLOYEE: keep createdBy=self restriction
+      const isOwnerAdminLocal = (myRole === 'OWNER' || myRole === 'ADMIN');
       const asgn = selectedUserId ? `&assignedToUserId=${encodeURIComponent(selectedUserId)}` : '';
-      const createdByParam = everyoneAll ? '' : '&createdBy=self';
+      const createdByParam = isOwnerAdminLocal ? '' : '&createdBy=self';
       const [lc, rc, le, re, lm, rm, lcOver, leOver] = await Promise.all([
         fetch(`/api/reminders?type=CALL&dateFrom=${encodeURIComponent(fmtSqlTsLocal(lf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(lt))}${createdByParam}${asgn}`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
         fetch(`/api/reminders?type=CALL&dateFrom=${encodeURIComponent(fmtSqlTsLocal(rf))}&dateTo=${encodeURIComponent(fmtSqlTsLocal(rt))}${createdByParam}${asgn}`, { headers: tokenHeader() }).then(r=>r.json()).then(d=>d.items||[]),
@@ -381,7 +387,8 @@ export default function Reminders({ perms }) {
       const meetingsMap = new Map(); [...lm, ...rm].forEach(m=>meetingsMap.set(m.id, m));
       setAsCalls(Array.from(callsMap.values()));
       setAsEmails(Array.from(emailsMap.values()));
-      setAsMeetings(Array.from(meetingsMap.values()));
+  setAsMeetings(Array.from(meetingsMap.values()));
+  // Do not load summary for Assigned To to avoid flicker/blink and extra requests
     } catch (e) {
       setAsError(e.message || String(e));
     } finally { setAsLoading(false); }
@@ -398,7 +405,192 @@ export default function Reminders({ perms }) {
     // Wait until self id is known to avoid loading mixed data for all roles
     if (!myUserId) return;
     loadLive();
+    loadSummary();
+    loadOverviewTotals();
   }, [activeTab, leftScope, rightScope, myRole, myUserId]);
+
+  // Load overview extended totals for My Overview (day/range headers)
+  async function loadOverviewTotals() {
+    if (activeTab !== 'overview') { setOverviewTotals(null); return; }
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      const res = await fetch('/api/reminders/summary/overview-extended', { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined });
+      if (!res.ok) throw new Error('Failed to load overview totals');
+      const data = await res.json();
+      setOverviewTotals(data);
+    } catch (e) {
+      setOverviewTotals(null);
+    }
+  }
+
+  // Load extended totals for Employee Overview (selected employee or Everyone)
+  async function loadEmployeeOverviewTotals() {
+    if (activeTab !== 'employee') { setEmpOverviewTotals(null); return; }
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      const qs = new URLSearchParams();
+      if (selectedUserId) qs.set('userId', selectedUserId);
+      const res = await fetch(`/api/reminders/summary/employee-extended${qs.toString() ? ('?' + qs.toString()) : ''}`, { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined });
+      if (!res.ok) throw new Error('Failed to load employee overview totals');
+      const data = await res.json();
+      setEmpOverviewTotals(data);
+    } catch (e) {
+      setEmpOverviewTotals(null);
+    }
+  }
+
+  // Trigger employee totals load when Employee tab active and selection changes
+  useEffect(() => {
+    if (activeTab === 'employee') {
+      loadEmployeeOverviewTotals();
+    }
+  }, [activeTab, selectedUserId, myRole]);
+
+  // Load summary counts for current context
+  async function loadSummary() {
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      let url = '';
+      if (activeTab === 'overview') {
+        url = '/api/reminders/summary/overview';
+      } else if (activeTab === 'assigned') {
+        const qs = new URLSearchParams();
+        if (selectedUserId) qs.set('assignedToUserId', selectedUserId);
+        url = `/api/reminders/summary/assigned${qs.toString() ? ('?' + qs.toString()) : ''}`;
+      } else if (activeTab === 'employee' && (myRole === 'OWNER' || myRole === 'ADMIN')) {
+        const qs = new URLSearchParams();
+        if (selectedUserId) qs.set('userId', selectedUserId);
+        url = `/api/reminders/summary/overview${qs.toString() ? ('?' + qs.toString()) : ''}`;
+      } else {
+        setSummaryBuckets(null);
+        return;
+      }
+      const res = await fetch(url, { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined });
+      if (!res.ok) throw new Error('Failed to load summary');
+      const data = await res.json();
+      setSummaryBuckets(data && data.buckets ? data.buckets : null);
+    } catch (e) {
+      setSummaryBuckets(null);
+    }
+  }
+
+  // Helper to resolve counts
+  function getCount(bucket, type, status) {
+    if (!summaryBuckets || !summaryBuckets[bucket]) return 0;
+    const t = summaryBuckets[bucket][type];
+    if (!t) return 0;
+    const v = t[status];
+    return typeof v === 'number' ? v : 0;
+  }
+
+  // Small summary bar UI
+  function SummaryBar({ title }) {
+    if (!summaryBuckets) return null;
+    const cell = (label, bucketKey, type) => (
+      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+        <div style={{fontSize:11, color:'#6b7280'}}>{label}</div>
+        <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap'}}>
+          <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, fontWeight:800, background:'#eef2ff', color:'#3730a3', border:'1px solid #c7d2fe'}}>
+            {type} Pending: {getCount(bucketKey, type, 'PENDING')}
+          </span>
+          <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, background:'#ecfdf5', color:'#065f46', border:'1px solid #a7f3d0'}}>
+            Done/Sent: {getCount(bucketKey, type, 'DONE') + getCount(bucketKey, type, 'SENT')}
+          </span>
+          <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, background:'#fef2f2', color:'#991b1b', border:'1px solid #fecaca'}}>
+            Failed: {getCount(bucketKey, type, 'FAILED')}
+          </span>
+        </div>
+      </div>
+    );
+    return (
+      <div style={{border:'1px solid #e5e7eb', borderRadius:12, background:'#fff', padding:12, margin:'4px 0 12px'}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8}}>
+          <div style={{fontWeight:700}}>{title}</div>
+          <div style={{fontSize:12, color:'#6b7280'}}>Buckets: Delayed · Today · Tomorrow</div>
+        </div>
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12}}>
+          <div>
+            <div style={{fontWeight:700, marginBottom:6}}>Calls</div>
+            <div style={{display:'grid', gridTemplateColumns:'1fr', gap:8}}>
+              {cell('Delayed', 'delayed', 'CALL')}
+              {cell('Today', 'today', 'CALL')}
+              {cell('Tomorrow', 'tomorrow', 'CALL')}
+            </div>
+          </div>
+          <div>
+            <div style={{fontWeight:700, marginBottom:6}}>Emails</div>
+            <div style={{display:'grid', gridTemplateColumns:'1fr', gap:8}}>
+              {cell('Delayed', 'delayed', 'EMAIL')}
+              {cell('Today', 'today', 'EMAIL')}
+              {cell('Tomorrow', 'tomorrow', 'EMAIL')}
+            </div>
+          </div>
+          <div style={{fontSize:12, color:'#6b7280'}}>
+            <div>Counts auto-refresh with the panels.</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Overview counters for Day and Range modes
+  function TotalsBar() {
+    if (!overviewTotals) {
+      return (
+        <div style={{border:'1px solid #e5e7eb', borderRadius:12, background:'#fff', padding:12, margin:'4px 0 12px', color:'#6b7280', fontSize:12}}>
+          Loading totals…
+        </div>
+      );
+    }
+    const groupCard = (label, group, opts = {}) => {
+      const showOverduePill = opts.showOverduePill === true;
+      const showBigOverdue = opts.showBigOverdue === true;
+      const fullHeight = opts.fullHeight === true;
+      return (
+        <div style={{border:'1px solid #e5e7eb', borderRadius:12, background:'#fff', padding:10, height: fullHeight ? '100%' : undefined, display: fullHeight ? 'flex' : undefined, flexDirection: fullHeight ? 'column' : undefined}}>
+          {/* Header row: title on left, big overdue box on right (when enabled) */}
+          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10, gap:8}}>
+            <div style={{fontWeight:700}}>{label}</div>
+            {showBigOverdue && (
+              <div style={{
+                border:'2px solid #fca5a5', background:'#fef2f2', color:'#991b1b',
+                borderRadius:12, padding:'8px 12px', fontWeight:800,
+                display:'inline-flex', alignItems:'center', gap:8, fontSize:16, whiteSpace:'nowrap'
+              }}>
+                Overdue: {group.overdue || 0}
+              </div>
+            )}
+          </div>
+          {/* Chips row */}
+          <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+            {showOverduePill && (
+              <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, background:'#fef2f2', color:'#991b1b', border:'1px solid #fecaca'}}>Overdue: {group.overdue||0}</span>
+            )}
+            <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, background:'#eef2ff', color:'#3730a3', border:'1px solid #c7d2fe'}}>Pending: {Math.max(0, (group.pending||0))}</span>
+            <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, background:'#ecfdf5', color:'#065f46', border:'1px solid #a7f3d0'}}>Done: {group.done||0}</span>
+            <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, background:'#ecfdf5', color:'#065f46', border:'1px solid #a7f3d0'}}>Sent: {group.sent||0}</span>
+            <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, background:'#fef2f2', color:'#991b1b', border:'1px solid #fecaca'}}>Failed: {group.failed||0}</span>
+          </div>
+        </div>
+      );
+    };
+    return (
+      <div style={{display:'grid', gridTemplateColumns:'1fr', gap:12, margin:'4px 0 12px'}}>
+        {/* Full-width total */}
+        <div>{groupCard('Total', overviewTotals.total || {}, { showOverduePill: true })}</div>
+        {/* Row aligning with Today (left) and Tomorrow (right) panels */}
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, alignItems:'stretch'}}>
+          <div style={{height:'100%'}}>{groupCard('Today', overviewTotals.today || {}, { showBigOverdue: true, fullHeight: true })}</div>
+          <div style={{height:'100%'}}>{groupCard('Tomorrow', overviewTotals.tomorrow || {}, { fullHeight: true })}</div>
+        </div>
+        {/* Row aligning with This Week (left) and This Month (right) panels */}
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+          <div>{groupCard('This Week', overviewTotals.week || {}, { })}</div>
+          <div>{groupCard('This Month', overviewTotals.month || {}, { })}</div>
+        </div>
+      </div>
+    );
+  }
 
   // Employee-scoped loader mirroring main view
   async function loadEmployeeLive() {
@@ -505,8 +697,13 @@ export default function Reminders({ perms }) {
     if (activeTab === 'assigned') {
       const everyoneAll = (!selectedUserId && (myRole === 'OWNER' || myRole === 'ADMIN'));
       if (selectedUserId) {
-        // Only items created by me and assigned to the selected user
-        loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
+        // OWNER/ADMIN: history for selected assignee across all creators
+        // EMPLOYEE: restrict to createdBy=self
+        if (myRole === 'OWNER' || myRole === 'ADMIN') {
+          loadHistory(null, { assignedToUserId: selectedUserId });
+        } else {
+          loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
+        }
       } else if (everyoneAll) {
         // OWNER/ADMIN with Everyone: history across all creators and assignees
         loadHistory(null);
@@ -578,7 +775,11 @@ export default function Reminders({ perms }) {
       if (activeTab === 'employee' && (myRole === 'OWNER' || myRole === 'ADMIN')) {
         await Promise.all([loadEmployeeLive(), selectedUserId ? loadHistory(selectedUserId) : loadHistory(null)]);
       } else if (activeTab === 'assigned' && selectedUserId) {
-        await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId })]);
+        if (myRole === 'OWNER' || myRole === 'ADMIN') {
+          await Promise.all([loadAssignedTo(), loadHistory(null, { assignedToUserId: selectedUserId })]);
+        } else {
+          await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId })]);
+        }
       } else if (activeTab === 'assigned' && !selectedUserId) {
         const everyoneAll = (myRole === 'OWNER' || myRole === 'ADMIN');
         await Promise.all([loadAssignedTo(), everyoneAll ? loadHistory(null) : loadHistory(null, { createdBySelf: true })]);
@@ -597,7 +798,11 @@ export default function Reminders({ perms }) {
       if (activeTab === 'employee' && (myRole === 'OWNER' || myRole === 'ADMIN')) {
         await Promise.all([loadEmployeeLive(), selectedUserId ? loadHistory(selectedUserId) : loadHistory(null)]);
       } else if (activeTab === 'assigned' && selectedUserId) {
-        await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId })]);
+        if (myRole === 'OWNER' || myRole === 'ADMIN') {
+          await Promise.all([loadAssignedTo(), loadHistory(null, { assignedToUserId: selectedUserId })]);
+        } else {
+          await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId })]);
+        }
       } else if (activeTab === 'assigned' && !selectedUserId) {
         const everyoneAll = (myRole === 'OWNER' || myRole === 'ADMIN');
         await Promise.all([loadAssignedTo(), everyoneAll ? loadHistory(null) : loadHistory(null, { createdBySelf: true })]);
@@ -615,7 +820,38 @@ export default function Reminders({ perms }) {
       if (activeTab === 'employee' && (myRole === 'OWNER' || myRole === 'ADMIN')) {
         await Promise.all([loadEmployeeLive(), selectedUserId ? loadHistory(selectedUserId) : loadHistory(null)]);
       } else if (activeTab === 'assigned' && selectedUserId) {
-        await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId })]);
+        if (myRole === 'OWNER' || myRole === 'ADMIN') {
+          await Promise.all([loadAssignedTo(), loadHistory(null, { assignedToUserId: selectedUserId })]);
+        } else {
+          await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId })]);
+        }
+      } else if (activeTab === 'assigned' && !selectedUserId) {
+        const everyoneAll = (myRole === 'OWNER' || myRole === 'ADMIN');
+        await Promise.all([loadAssignedTo(), everyoneAll ? loadHistory(null) : loadHistory(null, { createdBySelf: true })]);
+      } else {
+        await Promise.all([loadLive(), loadHistory(selfId)]);
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  async function revertReminderToPending(id) {
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      await fetch(`/api/reminders/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ status: 'PENDING' })
+      });
+      const selfId = (window.__currentUser && window.__currentUser.id) || myUserId;
+      // Reuse same refresh semantics as other status updates
+      if (activeTab === 'employee' && (myRole === 'OWNER' || myRole === 'ADMIN')) {
+        await Promise.all([loadEmployeeLive(), selectedUserId ? loadHistory(selectedUserId) : loadHistory(null)]);
+      } else if (activeTab === 'assigned' && selectedUserId) {
+        if (myRole === 'OWNER' || myRole === 'ADMIN') {
+          await Promise.all([loadAssignedTo(), loadHistory(null, { assignedToUserId: selectedUserId })]);
+        } else {
+          await Promise.all([loadAssignedTo(), loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId })]);
+        }
       } else if (activeTab === 'assigned' && !selectedUserId) {
         const everyoneAll = (myRole === 'OWNER' || myRole === 'ADMIN');
         await Promise.all([loadAssignedTo(), everyoneAll ? loadHistory(null) : loadHistory(null, { createdBySelf: true })]);
@@ -701,6 +937,8 @@ export default function Reminders({ perms }) {
 
       {activeTab === 'overview' && (
         <>
+      {/* Totals for My Overview */}
+      <TotalsBar />
       {/* Meetings row */}
       <Section title="Meetings">
         <TwoPanels
@@ -869,6 +1107,56 @@ export default function Reminders({ perms }) {
               </div>
             </div>
             <div style={{padding:12}}>
+              {/* Employee Totals (dynamic by selected employee) */}
+              {(() => {
+                const totals = empOverviewTotals;
+                if (!totals) {
+                  return (
+                    <div style={{border:'1px solid #e5e7eb', borderRadius:12, background:'#fff', padding:12, margin:'4px 0 12px', color:'#6b7280', fontSize:12}}>
+                      Loading totals…
+                    </div>
+                  );
+                }
+                const card = (label, group, opts = {}) => {
+                  const showOverduePill = opts.showOverduePill === true;
+                  const showBigOverdue = opts.showBigOverdue === true;
+                  const fullHeight = opts.fullHeight === true;
+                  return (
+                    <div style={{border:'1px solid #e5e7eb', borderRadius:12, background:'#fff', padding:10, height: fullHeight ? '100%' : undefined, display: fullHeight ? 'flex' : undefined, flexDirection: fullHeight ? 'column' : undefined}}>
+                      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10, gap:8}}>
+                        <div style={{fontWeight:700}}>{label}</div>
+                        {showBigOverdue && (
+                          <div style={{ border:'2px solid #fca5a5', background:'#fef2f2', color:'#991b1b', borderRadius:12, padding:'8px 12px', fontWeight:800, display:'inline-flex', alignItems:'center', gap:8, fontSize:16, whiteSpace:'nowrap' }}>
+                            Overdue: {group.overdue || 0}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                        {showOverduePill && (
+                          <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, background:'#fef2f2', color:'#991b1b', border:'1px solid #fecaca'}}>Overdue: {group.overdue||0}</span>
+                        )}
+                        <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, background:'#eef2ff', color:'#3730a3', border:'1px solid #c7d2fe'}}>Pending: {Math.max(0, (group.pending||0))}</span>
+                        <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, background:'#ecfdf5', color:'#065f46', border:'1px solid #a7f3d0'}}>Done: {group.done||0}</span>
+                        <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, background:'#ecfdf5', color:'#065f46', border:'1px solid #a7f3d0'}}>Sent: {group.sent||0}</span>
+                        <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, background:'#fef2f2', color:'#991b1b', border:'1px solid #fecaca'}}>Failed: {group.failed||0}</span>
+                      </div>
+                    </div>
+                  );
+                };
+                return (
+                  <div style={{display:'grid', gridTemplateColumns:'1fr', gap:12, margin:'4px 0 12px'}}>
+                    <div>{card('Total', totals.total || {}, { showOverduePill: true })}</div>
+                    <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, alignItems:'stretch'}}>
+                      <div style={{height:'100%'}}>{card('Today', totals.today || {}, { showBigOverdue: true, fullHeight: true })}</div>
+                      <div style={{height:'100%'}}>{card('Tomorrow', totals.tomorrow || {}, { fullHeight: true })}</div>
+                    </div>
+                    <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+                      <div>{card('This Week', totals.week || {}, {})}</div>
+                      <div>{card('This Month', totals.month || {}, {})}</div>
+                    </div>
+                  </div>
+                );
+              })()}
               {empError && <div style={{color:'#b91c1c', marginBottom:8}}>{empError}</div>}
               {(
                 <>
@@ -1048,7 +1336,11 @@ export default function Reminders({ perms }) {
           } else if (activeTab === 'assigned') {
             loadAssignedTo();
             if (selectedUserId) {
-              loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
+              if (myRole === 'OWNER' || myRole === 'ADMIN') {
+                loadHistory(null, { assignedToUserId: selectedUserId });
+              } else {
+                loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
+              }
             } else {
               const everyoneAll = (myRole === 'OWNER' || myRole === 'ADMIN');
               if (everyoneAll) loadHistory(null); else loadHistory(null, { createdBySelf: true });
@@ -1094,7 +1386,11 @@ export default function Reminders({ perms }) {
           } else if (activeTab === 'assigned') {
             loadAssignedTo();
             if (selectedUserId) {
-              loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
+              if (myRole === 'OWNER' || myRole === 'ADMIN') {
+                loadHistory(null, { assignedToUserId: selectedUserId });
+              } else {
+                loadHistory(null, { createdBySelf: true, assignedToUserId: selectedUserId });
+              }
             } else {
               const everyoneAll = (myRole === 'OWNER' || myRole === 'ADMIN');
               if (everyoneAll) loadHistory(null); else loadHistory(null, { createdBySelf: true });
@@ -1206,6 +1502,34 @@ export default function Reminders({ perms }) {
                   {/* Type pill */}
                   <span style={{padding:'3px 8px', borderRadius:999, fontSize:11, fontWeight:700, background:'#f3f4f6', color:'#374151'}}>{it.kind}</span>
                   <span style={badgeStyle(it.status)} className="badge">{chipIcon(it.kind, it.status)} {it.status}</span>
+                  {(['EMAIL','CALL'].includes(String(it.kind).toUpperCase())) && it.emails_sent_attempts>0 ? (
+                    <span title={`Total send attempts recorded`} style={{padding:'3px 8px', borderRadius:999, fontSize:11, fontWeight:700, background:'#f0f9ff', color:'#075985', border:'1px solid #bae6fd'}}>
+                      Sent: {it.emails_sent_attempts}
+                    </span>
+                  ) : null}
+                  {(() => {
+                    const terminal = it.status === 'DONE' || it.status === 'SENT' || it.status === 'FAILED';
+                    const isMyOverview = activeTab === 'overview';
+                    const isAssignedToMe = it.assigned_to_user_id && myUserId && String(it.assigned_to_user_id) === String(myUserId);
+                    if (terminal && isMyOverview && isAssignedToMe) {
+                      return (
+                        <button
+                          type="button"
+                          className="btn"
+                          title="Revert to PENDING"
+                          onClick={() => {
+                            if (window.confirm('Revert this reminder back to PENDING?')) {
+                              revertReminderToPending(it.id);
+                            }
+                          }}
+                          style={{border:'1px solid #e5e7eb', background:'#fff', color:'#111', borderRadius:999, padding:'3px 8px', fontSize:11}}
+                        >
+                          ↺ Revert
+                        </button>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
               </div>
             ))}
@@ -1431,6 +1755,11 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
                         {/* Line 2: Status + Edit */}
                         <div style={{display:'flex', alignItems:'center', gap:8}}>
                           <span style={badgeStyle(it.status)} className="badge">{chipIcon(it.kind, it.status)} {it.status}</span>
+                          {(['EMAIL','CALL'].includes(String(it.kind).toUpperCase())) && it.emails_sent_attempts>0 ? (
+                            <span title={`Total send attempts recorded`} style={{padding:'3px 8px', borderRadius:999, fontSize:11, fontWeight:700, background:'#f0f9ff', color:'#075985', border:'1px solid #bae6fd'}}>
+                              Sent: {it.emails_sent_attempts}
+                            </span>
+                          ) : null}
                           {onEdit && (
                             <button className="btn" type="button" title="Edit"
                               onClick={() => onEdit(it)}
@@ -1588,6 +1917,11 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
                   )}
                   <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', justifyContent:'flex-end'}}>
                     <span style={badgeStyle(it.status)} className="badge">{chipIcon(it.kind, it.status)} {it.status}</span>
+                    {(['EMAIL','CALL'].includes(String(it.kind).toUpperCase())) && it.emails_sent_attempts>0 ? (
+                      <span title={`Total send attempts recorded`} style={{padding:'3px 8px', borderRadius:999, fontSize:11, fontWeight:700, background:'#f0f9ff', color:'#075985', border:'1px solid #bae6fd'}}>
+                        Sent: {it.emails_sent_attempts}
+                      </span>
+                    ) : null}
                     {it && (it.kind === 'CALL' || it.kind === 'EMAIL') && (
                       <>
                         {onEdit && (
@@ -1659,6 +1993,7 @@ function toItem(r) {
     who: r.receiver_email || r.person_name || '-',
     status: r.status,
     kind: r.type,
+  emails_sent_attempts: Number(r.emails_sent_attempts || 0),
     // extra fields for edit prefill
     type: r.type,
     person_name: r.person_name || '',

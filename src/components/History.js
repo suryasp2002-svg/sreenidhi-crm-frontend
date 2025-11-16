@@ -1,5 +1,93 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
+// ---- Helpers to render audit diffs in plain language ----
+function parseLocalDateTime(v) {
+  if (!v && v !== 0) return null;
+  if (v instanceof Date) return v;
+  const s = String(v);
+  // If already ISO with timezone, let Date parse it
+  if (/Z|[+-]\d{2}:\d{2}$/.test(s)) {
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  // Match "YYYY-MM-DD HH:mm[:ss]"
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (m) {
+    const [, Y, Mo, Da, H, Mi, S] = m;
+    return new Date(+Y, +Mo - 1, +Da, +H, +Mi, +(S || 0), 0);
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+function fmtShortDateTime(v) {
+  const d = parseLocalDateTime(v);
+  if (!d) return String(v ?? '');
+  const dateText = d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeText = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+  return `${dateText}, ${timeText}`;
+}
+function prettyValue(key, val) {
+  if (val === null || val === undefined) return '';
+  const k = String(key).toLowerCase();
+  if (k.endsWith('_at') || k.endsWith('_ts') || k === 'when' || k === 'when_ts' || k === 'starts_at' || k === 'ends_at') {
+    return fmtShortDateTime(val);
+  }
+  if (k.includes('phone')) {
+    const s = String(val).replace(/[^0-9+]/g, '');
+    return s.replace(/(\+?\d{1,3})?(\d{3})(\d{3})(\d{4})/, (_m, cc, a, b, c) => [cc || '', a, b, c].filter(Boolean).join(' ')) || String(val);
+  }
+  return String(val);
+}
+const MEETING_LABELS = {
+  when_ts: 'Meeting time',
+  starts_at: 'Start time',
+  ends_at: 'End time',
+  location: 'Location',
+  person_name: 'Contact name',
+  contact_phone: 'Phone',
+  notes: 'Notes',
+  assigned_to: 'Assigned to',
+  assigned_to_user_id: 'Assigned to (user)',
+  created_by: 'Created by',
+  created_by_user_id: 'Created by (user)',
+  status: 'Status',
+  client_name: 'Client name'
+};
+const REMINDER_LABELS = {
+  due_ts: 'Reminder time',
+  type: 'Type',
+  status: 'Status',
+  title: 'Title',
+  receiver_email: 'Email',
+  recipient_email: 'Email',
+  person_name: 'Person name',
+  phone: 'Phone',
+  notes: 'Notes',
+  assigned_to: 'Assigned to',
+  assigned_to_user_id: 'Assigned to (user)',
+  created_by: 'Created by',
+  created_by_user_id: 'Created by (user)'
+};
+function toPlainChangeLines(diff, labelsMap) {
+  const keys = Object.keys(diff || {});
+  const lines = [];
+  for (const k of keys) {
+    const label = labelsMap[k] || k;
+    const from = diff[k] && ('from' in diff[k]) ? diff[k].from : undefined;
+    const to = diff[k] && ('to' in diff[k]) ? diff[k].to : undefined;
+    const fromText = prettyValue(k, from);
+    const toText = prettyValue(k, to);
+    if (from !== undefined && (to === undefined || to === null || to === '')) {
+      lines.push(`${label} removed (was ${fromText || 'empty'})`);
+    } else if ((from === undefined || from === null || from === '') && to !== undefined) {
+      lines.push(`${label} set to ${toText || 'empty'}`);
+    } else if (fromText !== toText) {
+      lines.push(`${label} changed: ${fromText || 'empty'} → ${toText || 'empty'}`);
+    }
+  }
+  return lines;
+}
+
 function History() {
   const [filters, setFilters] = useState({
     q: '',
@@ -7,7 +95,7 @@ function History() {
     dateFrom: '',
     dateTo: ''
   });
-  const [activeTab, setActiveTab] = useState('stage'); // 'stage' | 'expenses' | 'passwords'
+  const [activeTab, setActiveTab] = useState('stage'); // 'stage' | 'expenses' | 'passwords' | 'meetings_v2' | 'reminders_v2' | 'reminders_email'
   // Password audit state
   const [pwdItems, setPwdItems] = useState([]);
   const [pwdLoading, setPwdLoading] = useState(false);
@@ -30,6 +118,33 @@ function History() {
   const [expAction, setExpAction] = useState('');
   // Fallback map: opportunity_id -> client_name
   const [oppMap, setOppMap] = useState({});
+  // Meetings audit v2 state
+  const [maMeetingId, setMaMeetingId] = useState('');
+  const [maItems, setMaItems] = useState([]);
+  const [maLoading, setMaLoading] = useState(false);
+  const [maError, setMaError] = useState(null);
+  const [maExpanded, setMaExpanded] = useState({}); // idx -> boolean
+  const [maPage, setMaPage] = useState(1);
+  const [maPageSize, setMaPageSize] = useState(50);
+  // Reminders audit v2 state
+  const [raReminderId, setRaReminderId] = useState('');
+  const [raAction, setRaAction] = useState('');
+  const [raItems, setRaItems] = useState([]);
+  const [raLoading, setRaLoading] = useState(false);
+  const [raError, setRaError] = useState(null);
+  const [raExpanded, setRaExpanded] = useState({});
+  const [raPage, setRaPage] = useState(1);
+  const [raPageSize, setRaPageSize] = useState(50);
+  // Reminders Email Selected audit state
+  const [reOperationId, setReOperationId] = useState('');
+  const [reReminderId, setReReminderId] = useState('');
+  const [reStatus, setReStatus] = useState(''); // '', 'SENT', 'FAILED'
+  const [reItems, setReItems] = useState([]);
+  const [reLoading, setReLoading] = useState(false);
+  const [reError, setReError] = useState(null);
+  const [reExpanded, setReExpanded] = useState({});
+  const [rePage, setRePage] = useState(1);
+  const [rePageSize, setRePageSize] = useState(50);
 
   const entityParam = useMemo(() => {
     const enabled = Object.entries(filters.entityType).filter(([,v]) => v).map(([k]) => k);
@@ -94,6 +209,16 @@ function History() {
         })
         .catch(() => {});
     }
+    if (activeTab === 'meetings_v2') {
+      // default: load all when no input
+      fetchMeetingsAuditV2(maMeetingId.trim(), 1, maPageSize);
+    }
+    if (activeTab === 'reminders_v2') {
+      fetchRemindersAuditV2(raReminderId.trim(), raAction, 1, raPageSize);
+    }
+    if (activeTab === 'reminders_email') {
+      fetchRemindersEmailSelected(reOperationId.trim(), reReminderId.trim(), reStatus, 1, rePageSize);
+    }
     if (activeTab === 'passwords') {
       fetchPasswordAudit(1, pwdPageSize);
     }
@@ -107,6 +232,36 @@ function History() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.q, filters.dateFrom, filters.dateTo, expAction, activeTab]);
+
+  // Dynamic fetch for Meetings v2 when id changes
+  useEffect(() => {
+    if (activeTab !== 'meetings_v2') return;
+    const t = setTimeout(() => {
+      fetchMeetingsAuditV2(maMeetingId.trim(), 1, maPageSize);
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maMeetingId, maPageSize, activeTab]);
+
+  // Dynamic fetch for Reminders v2 when filters change
+  useEffect(() => {
+    if (activeTab !== 'reminders_v2') return;
+    const t = setTimeout(() => {
+      fetchRemindersAuditV2(raReminderId.trim(), raAction, 1, raPageSize);
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [raReminderId, raAction, raPageSize, filters.dateFrom, filters.dateTo, activeTab]);
+
+  // Dynamic fetch for Reminders Email Selected when filters change
+  useEffect(() => {
+    if (activeTab !== 'reminders_email') return;
+    const t = setTimeout(() => {
+      fetchRemindersEmailSelected(reOperationId.trim(), reReminderId.trim(), reStatus, 1, rePageSize);
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reOperationId, reReminderId, reStatus, rePageSize, filters.dateFrom, filters.dateTo, activeTab]);
 
   // Dynamic filters for Password Audit
   useEffect(() => {
@@ -168,6 +323,96 @@ function History() {
       setPwdError(err.message);
     } finally {
       setPwdLoading(false);
+    }
+  }
+
+  async function fetchMeetingsAuditV2(meetingId, p = maPage, s = maPageSize) {
+    setMaLoading(true);
+    setMaError(null);
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const params = new URLSearchParams();
+      if (meetingId) params.append('meetingId', meetingId);
+      if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
+      if (filters.dateTo) params.append('dateTo', filters.dateTo);
+      params.append('page', String(p));
+      params.append('pageSize', String(s));
+      const res = await fetch(`/api/meetings-audit-v2?${params.toString()}`, { headers });
+      if (!res.ok) {
+        let msg = 'Failed to fetch meetings audit';
+        try { const t = await res.json(); if (t?.error) msg = t.error; } catch {}
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      setMaItems(Array.isArray(data.items) ? data.items : []);
+      setMaPage(p);
+      setMaPageSize(s);
+    } catch (err) {
+      setMaError(err.message);
+    } finally {
+      setMaLoading(false);
+    }
+  }
+
+  async function fetchRemindersAuditV2(reminderId, action, p = raPage, s = raPageSize) {
+    setRaLoading(true);
+    setRaError(null);
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const params = new URLSearchParams();
+      if (reminderId) params.append('reminderId', reminderId);
+      if (action) params.append('action', action);
+      if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
+      if (filters.dateTo) params.append('dateTo', filters.dateTo);
+      params.append('page', String(p));
+      params.append('pageSize', String(s));
+      const res = await fetch(`/api/reminders-audit-v2?${params.toString()}`, { headers });
+      if (!res.ok) {
+        let msg = 'Failed to fetch reminders audit';
+        try { const t = await res.json(); if (t?.error) msg = t.error; } catch {}
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      setRaItems(Array.isArray(data.items) ? data.items : []);
+      setRaPage(p);
+      setRaPageSize(s);
+    } catch (err) {
+      setRaError(err.message);
+    } finally {
+      setRaLoading(false);
+    }
+  }
+
+  async function fetchRemindersEmailSelected(operationId, reminderId, status, p = rePage, s = rePageSize) {
+    setReLoading(true);
+    setReError(null);
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const params = new URLSearchParams();
+      if (operationId) params.append('operationId', operationId);
+      if (reminderId) params.append('reminderId', reminderId);
+      if (status) params.append('status', status);
+      if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
+      if (filters.dateTo) params.append('dateTo', filters.dateTo);
+      params.append('page', String(p));
+      params.append('pageSize', String(s));
+      const res = await fetch(`/api/reminders-email-selected-audit?${params.toString()}`, { headers });
+      if (!res.ok) {
+        let msg = 'Failed to fetch reminders email audit';
+        try { const t = await res.json(); if (t?.error) msg = t.error; } catch {}
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      setReItems(Array.isArray(data.items) ? data.items : []);
+      setRePage(p);
+      setRePageSize(s);
+    } catch (err) {
+      setReError(err.message);
+    } finally {
+      setReLoading(false);
     }
   }
 
@@ -237,7 +482,10 @@ function History() {
         <div style={{marginBottom:12}}>
           <button className={activeTab==='stage'?'btn':'btn ghost'} type="button" onClick={() => setActiveTab('stage')}>Stage History</button>
           <button className={activeTab==='expenses'?'btn':'btn ghost'} type="button" style={{marginLeft:8}} onClick={() => setActiveTab('expenses')}>Expense Audit</button>
+          <button className={activeTab==='meetings_v2'?'btn':'btn ghost'} type="button" style={{marginLeft:8}} onClick={() => setActiveTab('meetings_v2')}>Meetings Audit (v2)</button>
           <button className={activeTab==='passwords'?'btn':'btn ghost'} type="button" style={{marginLeft:8}} onClick={() => setActiveTab('passwords')}>Password Audit</button>
+          <button className={activeTab==='reminders_v2'?'btn':'btn ghost'} type="button" style={{marginLeft:8}} onClick={() => setActiveTab('reminders_v2')}>Reminders Audit (v2)</button>
+          <button className={activeTab==='reminders_email'?'btn':'btn ghost'} type="button" style={{marginLeft:8}} onClick={() => setActiveTab('reminders_email')}>Reminders Email Selected</button>
         </div>
         <div className="grid cols-4">
           <div className="row" style={{gridColumn:'1/-1'}}>
@@ -316,6 +564,54 @@ function History() {
               <div className="row">
                 <label className="block">Actor (who changed)</label>
                 <input value={pwdActor} onChange={e => setPwdActor(e.target.value)} />
+              </div>
+              <div className="row" style={{gridColumn:'1/-1'}} />
+            </>
+          )}
+          {activeTab === 'meetings_v2' && (
+            <>
+              <div className="row" style={{gridColumn:'1/-1'}}>
+                <label className="block">Meeting ID</label>
+                <input value={maMeetingId} onChange={e => setMaMeetingId(e.target.value)} placeholder="Enter meeting ID (e.g., ABCD1234)" />
+                <div className="muted" style={{marginTop:4,fontSize:12}}>Enter a Meeting ID to load its change history (JSON diff + snapshot).</div>
+              </div>
+            </>
+          )}
+          {activeTab === 'reminders_v2' && (
+            <>
+              <div className="row">
+                <label className="block">Reminder ID</label>
+                <input value={raReminderId} onChange={e => setRaReminderId(e.target.value)} placeholder="Enter reminder ID (optional)" />
+              </div>
+              <div className="row">
+                <label className="block">Action</label>
+                <select value={raAction} onChange={e => setRaAction(e.target.value)}>
+                  <option value="">All</option>
+                  <option value="CREATE">CREATE</option>
+                  <option value="UPDATE">UPDATE</option>
+                  <option value="STATUS">STATUS</option>
+                </select>
+              </div>
+              <div className="row" style={{gridColumn:'1/-1'}} />
+            </>
+          )}
+          {activeTab === 'reminders_email' && (
+            <>
+              <div className="row">
+                <label className="block">Operation ID</label>
+                <input value={reOperationId} onChange={e => setReOperationId(e.target.value)} placeholder="Filter by operation ID (optional)" />
+              </div>
+              <div className="row">
+                <label className="block">Reminder ID</label>
+                <input value={reReminderId} onChange={e => setReReminderId(e.target.value)} placeholder="Filter by reminder ID (optional)" />
+              </div>
+              <div className="row">
+                <label className="block">Status</label>
+                <select value={reStatus} onChange={e => setReStatus(e.target.value)}>
+                  <option value="">All</option>
+                  <option value="SENT">SENT</option>
+                  <option value="FAILED">FAILED</option>
+                </select>
               </div>
               <div className="row" style={{gridColumn:'1/-1'}} />
             </>
@@ -481,6 +777,243 @@ function History() {
             )}
           </tbody>
         </table>
+      </div>
+      )}
+
+      {activeTab === 'meetings_v2' && (
+      <div className="card" style={{marginTop:24}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <h3 style={{margin:0}}>Meetings Audit (v2)</h3>
+          <div style={{display:'flex',gap:16,alignItems:'center'}}>
+            <select value={maPageSize} onChange={e => { const v = Number(e.target.value); setMaPageSize(v); fetchMeetingsAuditV2(maMeetingId.trim(), 1, v); }}>
+              {[25,50,100].map(n => <option key={n} value={n}>{n}/page</option>)}
+            </select>
+            <div>
+              <button className="btn" type="button" style={{background:'#eee',color:'#222',marginRight:8}} onClick={() => fetchMeetingsAuditV2(maMeetingId.trim(), Math.max(maPage-1,1), maPageSize)}>Prev</button>
+              <button className="btn" type="button" style={{background:'#eee',color:'#222'}} onClick={() => fetchMeetingsAuditV2(maMeetingId.trim(), maPage+1, maPageSize)}>Next</button>
+            </div>
+            <button className="btn" type="button" style={{background:'#eee',color:'#222'}} onClick={() => fetchMeetingsAuditV2(maMeetingId.trim(), maPage, maPageSize)}>Refresh</button>
+          </div>
+        </div>
+        {maLoading && <div style={{padding:'8px'}}>Loading meetings audit…</div>}
+        {maError && <div style={{color:'red',padding:'8px'}}>{maError}</div>}
+        {!maLoading && !maError && (
+          <table id="meetingsAuditV2Table">
+            <thead>
+              <tr>
+                <th>Version</th>
+                <th>Action</th>
+                <th>Performed By</th>
+                <th>Performed At</th>
+                <th>Note</th>
+                <th>Changes</th>
+                <th>Snapshot</th>
+              </tr>
+            </thead>
+            <tbody>
+              {maItems.length === 0 ? (
+                <tr><td colSpan={7} className="muted">No meeting audits to display</td></tr>
+              ) : maItems.map((i, idx) => {
+                const diff = i.diff || {};
+                const lines = toPlainChangeLines(diff, MEETING_LABELS);
+                const expanded = !!maExpanded[idx];
+                return (
+                  <tr key={`${i.meeting_id}-${i.version}-${i.performed_at}-${idx}`}>
+                    <td>{i.version}</td>
+                    <td>{i.action}</td>
+                    <td>{i.performed_by || i.performed_by_user_id || ''}</td>
+                    <td>{new Date(i.performed_at).toLocaleString()}</td>
+                    <td>{i.note || ''}</td>
+                    <td style={{whiteSpace:'pre-wrap'}}>
+                      {lines.length ? (
+                        <ul style={{margin:'6px 0', paddingLeft:18}}>
+                          {lines.slice(0,5).map((t, j) => <li key={j}>{t}</li>)}
+                        </ul>
+                      ) : '(no changes)'}
+                      {lines.length > 5 && <div className="muted" style={{fontSize:12,marginTop:4}}>+{lines.length-5} more…</div>}
+                    </td>
+                    <td>
+                      <button className="btn" type="button" style={{background:'#eee',color:'#222'}} onClick={() => setMaExpanded(m => ({...m, [idx]: !expanded}))}>{expanded ? 'Hide' : 'View'}</button>
+                      {expanded && (
+                        <div style={{maxWidth:480,maxHeight:260,overflow:'auto',border:'1px solid #eee',borderRadius:6,marginTop:8,padding:6,background:'#fafafa'}}>
+                          <div style={{fontWeight:600}}>Diff</div>
+                          <pre style={{fontSize:12,whiteSpace:'pre-wrap'}}>{JSON.stringify(i.diff, null, 2)}</pre>
+                          <div style={{fontWeight:600, marginTop:8}}>Snapshot</div>
+                          <pre style={{fontSize:12,whiteSpace:'pre-wrap'}}>{JSON.stringify(i.snapshot, null, 2)}</pre>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+      )}
+
+      {activeTab === 'reminders_v2' && (
+      <div className="card" style={{marginTop:24}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <h3 style={{margin:0}}>Reminders Audit (v2)</h3>
+          <div style={{display:'flex',gap:16,alignItems:'center'}}>
+            <select value={raPageSize} onChange={e => { const v = Number(e.target.value); setRaPageSize(v); fetchRemindersAuditV2(raReminderId.trim(), raAction, 1, v); }}>
+              {[25,50,100].map(n => <option key={n} value={n}>{n}/page</option>)}
+            </select>
+            <div>
+              <button className="btn" type="button" style={{background:'#eee',color:'#222',marginRight:8}} onClick={() => fetchRemindersAuditV2(raReminderId.trim(), raAction, Math.max(raPage-1,1), raPageSize)}>Prev</button>
+              <button className="btn" type="button" style={{background:'#eee',color:'#222'}} onClick={() => fetchRemindersAuditV2(raReminderId.trim(), raAction, raPage+1, raPageSize)}>Next</button>
+            </div>
+            <button className="btn" type="button" style={{background:'#eee',color:'#222'}} onClick={() => fetchRemindersAuditV2(raReminderId.trim(), raAction, raPage, raPageSize)}>Refresh</button>
+          </div>
+        </div>
+        {raLoading && <div style={{padding:'8px'}}>Loading reminders audit…</div>}
+        {raError && <div style={{color:'red',padding:'8px'}}>{raError}</div>}
+        {!raLoading && !raError && (
+          <table id="remindersAuditV2Table">
+            <thead>
+              <tr>
+                <th>Reminder ID</th>
+                <th>Type</th>
+                <th>Version</th>
+                <th>Action</th>
+                <th>Performed By</th>
+                <th>Performed At</th>
+                <th>Note</th>
+                <th>Changes</th>
+                <th>Snapshot</th>
+              </tr>
+            </thead>
+            <tbody>
+              {raItems.length === 0 ? (
+                <tr><td colSpan={8} className="muted">No reminder audits to display</td></tr>
+              ) : raItems.map((i, idx) => {
+                const diff = i.diff || {};
+                const lines = toPlainChangeLines(diff, REMINDER_LABELS);
+                const expanded = !!raExpanded[idx];
+                return (
+                  <tr key={`${i.reminder_id}-${i.version}-${i.performed_at}-${idx}`}>
+                    <td>{i.reminder_id}</td>
+                    <td>{i.reminder_type || (i.snapshot && i.snapshot.type) || ''}</td>
+                    <td>{i.version}</td>
+                    <td>{i.action}</td>
+                    <td>{i.performed_by || i.performed_by_user_id || ''}</td>
+                    <td>{new Date(i.performed_at).toLocaleString()}</td>
+                    <td>{i.note || ''}</td>
+                    <td style={{whiteSpace:'pre-wrap'}}>
+                      {lines.length ? (
+                        <ul style={{margin:'6px 0', paddingLeft:18}}>
+                          {lines.slice(0,5).map((t, j) => <li key={j}>{t}</li>)}
+                        </ul>
+                      ) : '(no changes)'}
+                      {lines.length > 5 && <div className="muted" style={{fontSize:12,marginTop:4}}>+{lines.length-5} more…</div>}
+                    </td>
+                    <td>
+                      <button className="btn" type="button" style={{background:'#eee',color:'#222'}} onClick={() => setRaExpanded(m => ({...m, [idx]: !expanded}))}>{expanded ? 'Hide' : 'View'}</button>
+                      {expanded && (
+                        <div style={{maxWidth:480,maxHeight:260,overflow:'auto',border:'1px solid #eee',borderRadius:6,marginTop:8,padding:6,background:'#fafafa'}}>
+                          <div style={{fontWeight:600}}>Diff</div>
+                          <pre style={{fontSize:12,whiteSpace:'pre-wrap'}}>{JSON.stringify(i.diff, null, 2)}</pre>
+                          <div style={{fontWeight:600, marginTop:8}}>Snapshot</div>
+                          <pre style={{fontSize:12,whiteSpace:'pre-wrap'}}>{JSON.stringify(i.snapshot, null, 2)}</pre>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+      )}
+
+      {activeTab === 'reminders_email' && (
+      <div className="card" style={{marginTop:24}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <h3 style={{margin:0}}>Reminders Email Selected</h3>
+          <div style={{display:'flex',gap:16,alignItems:'center'}}>
+            <select value={rePageSize} onChange={e => { const v = Number(e.target.value); setRePageSize(v); fetchRemindersEmailSelected(reOperationId.trim(), reReminderId.trim(), reStatus, 1, v); }}>
+              {[25,50,100].map(n => <option key={n} value={n}>{n}/page</option>)}
+            </select>
+            <div>
+              <button className="btn" type="button" style={{background:'#eee',color:'#222',marginRight:8}} onClick={() => fetchRemindersEmailSelected(reOperationId.trim(), reReminderId.trim(), reStatus, Math.max(rePage-1,1), rePageSize)}>Prev</button>
+              <button className="btn" type="button" style={{background:'#eee',color:'#222'}} onClick={() => fetchRemindersEmailSelected(reOperationId.trim(), reReminderId.trim(), reStatus, rePage+1, rePageSize)}>Next</button>
+            </div>
+            <button className="btn" type="button" style={{background:'#eee',color:'#222'}} onClick={() => fetchRemindersEmailSelected(reOperationId.trim(), reReminderId.trim(), reStatus, rePage, rePageSize)}>Refresh</button>
+          </div>
+        </div>
+        {reLoading && <div style={{padding:'8px'}}>Loading reminders email audit…</div>}
+        {reError && <div style={{color:'red',padding:'8px'}}>{reError}</div>}
+        {!reLoading && !reError && (
+          <table id="remindersEmailSelectedAuditTable">
+            <thead>
+              <tr>
+                <th>Operation ID</th>
+                <th>Type</th>
+                <th>Reminder ID</th>
+                <th>Performed By</th>
+                <th>Performed At</th>
+                <th>Subject</th>
+                <th>Sent Count</th>
+                <th>Status</th>
+                <th>Message ID</th>
+                <th>Error</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reItems.length === 0 ? (
+                <tr><td colSpan={10} className="muted">No entries</td></tr>
+              ) : reItems.map((i, idx) => {
+                const expanded = !!reExpanded[idx];
+                // estimate recipient count
+                const recDedup = i.recipients_dedup || [];
+                const to = Array.isArray(i.to_recipients) ? i.to_recipients : [];
+                const cc = Array.isArray(i.cc_recipients) ? i.cc_recipients : [];
+                const bcc = Array.isArray(i.bcc_recipients) ? i.bcc_recipients : [];
+                const err = i.error ? String(i.error).slice(0,120) + (String(i.error).length>120?'…':'') : '';
+                return (
+                  <tr key={`${i.operation_id}-${i.reminder_id}-${i.performed_at}-${idx}`}>
+                    <td style={{fontFamily:'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'}}>{i.operation_id}</td>
+                    <td>{i.reminder_type || ''}</td>
+                    <td>{i.reminder_id}</td>
+                    <td>{i.performed_by || i.performed_by_user_id || ''}</td>
+                    <td>{new Date(i.performed_at).toLocaleString()}</td>
+                    <td title={i.subject || ''} style={{maxWidth:280,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{i.subject || ''}</td>
+                    <td>{i.sent_count ?? recDedup.length ?? (to.length + cc.length + bcc.length)}</td>
+                    <td>{i.status}</td>
+                    <td style={{maxWidth:200,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}} title={i.message_id || ''}>{i.message_id || ''}</td>
+                    <td style={{color:'#991b1b'}} title={i.error || ''}>{err}</td>
+                    <td>
+                      <button className="btn" type="button" style={{background:'#eee',color:'#222'}} onClick={() => setReExpanded(m => ({...m, [idx]: !expanded}))}>{expanded ? 'Hide' : 'View'}</button>
+                      {expanded && (
+                        <div style={{maxWidth:520,maxHeight:260,overflow:'auto',border:'1px solid #eee',borderRadius:6,marginTop:8,padding:6,background:'#fafafa'}}>
+                          <div style={{fontWeight:600}}>Recipients (dedup)</div>
+                          <pre style={{fontSize:12,whiteSpace:'pre-wrap'}}>{JSON.stringify(i.recipients_dedup || [], null, 2)}</pre>
+                          <div style={{fontWeight:600, marginTop:8}}>All Recipients</div>
+                          <pre style={{fontSize:12,whiteSpace:'pre-wrap'}}>{JSON.stringify({ to: i.to_recipients, cc: i.cc_recipients, bcc: i.bcc_recipients }, null, 2)}</pre>
+                          {(i.meta || i.error) && (
+                            <>
+                              <div style={{fontWeight:600, marginTop:8}}>Meta</div>
+                              <pre style={{fontSize:12,whiteSpace:'pre-wrap'}}>{JSON.stringify(i.meta || {}, null, 2)}</pre>
+                              {i.error && (
+                                <>
+                                  <div style={{fontWeight:600, marginTop:8, color:'#991b1b'}}>Error</div>
+                                  <pre style={{fontSize:12,whiteSpace:'pre-wrap',color:'#991b1b'}}>{String(i.error)}</pre>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
       )}
     </div>
