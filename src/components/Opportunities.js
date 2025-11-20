@@ -134,9 +134,44 @@ function Opportunities({ perms }) {
     </svg>
   );
 
+  // Helper components to show PNG when available, inline SVG when not
+  function AssignmentIcon({ assignment }) {
+    const [stage, setStage] = useState('png'); // png -> svg -> inline
+    const isContract = String(assignment).toUpperCase() === 'CONTRACT';
+    const pngSrc = isContract ? '/assets/contract.png' : '/assets/customer.png';
+    const svgSrc = isContract ? '/assets/icons/contract.svg' : '/assets/icons/customer.svg';
+    return (
+      <span title={isContract ? 'Contract' : 'Customer'} aria-label={isContract ? 'Contract' : 'Customer'} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:36,height:36,marginRight:10,verticalAlign:'middle'}}>
+        {stage === 'png' ? (
+          <img src={pngSrc} alt={isContract ? 'Contract' : 'Customer'} width={28} height={28} style={{display:'block'}} onError={() => setStage('svg')} />
+        ) : stage === 'svg' ? (
+          <img src={svgSrc} alt={isContract ? 'Contract' : 'Customer'} width={28} height={28} style={{display:'block'}} onError={() => setStage('inline')} />
+        ) : (
+          isContract ? <ContractIcon size={22} /> : <CustomerIcon size={22} />
+        )}
+      </span>
+    );
+  }
+
+  function MapIconLink({ href }) {
+    const [stage, setStage] = useState('png'); // png -> svg -> inline
+    if (!href) return <>—</>;
+    return (
+      <a href={href} target="_blank" rel="noreferrer" title="Open in Google Maps" style={{display:'inline-flex',alignItems:'center'}}>
+        {stage === 'png' ? (
+          <img src="/assets/maps.png" alt="Location" width={20} height={20} style={{display:'block'}} onError={() => setStage('svg')} />
+        ) : stage === 'svg' ? (
+          <img src="/assets/icons/maps.svg" alt="Location" width={20} height={20} style={{display:'block'}} onError={() => setStage('inline')} />
+        ) : (
+          <MapPinIcon size={20} />
+        )}
+      </a>
+    );
+  }
+
   // Debounce search term to avoid chatty requests
   useEffect(() => {
-    const h = setTimeout(() => setDebouncedSearch(search), 350);
+    const h = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(h);
   }, [search]);
 
@@ -998,7 +1033,7 @@ function Opportunities({ perms }) {
           <tbody>
             {(() => {
               const filtered = opportunities.filter(o => {
-                const textMatch = o.client_name.toLowerCase().includes(search.toLowerCase()) || o.opportunity_id.toLowerCase().includes(search.toLowerCase());
+                const textMatch = o.client_name.toLowerCase().includes((debouncedSearch||'').toLowerCase()) || o.opportunity_id.toLowerCase().includes((debouncedSearch||'').toLowerCase());
                 if (!textMatch) return false;
                 const sec = o.sector || '—';
                 const st = o.stage || '—';
@@ -1028,9 +1063,7 @@ function Opportunities({ perms }) {
               return sorted.map(o => (
                 <tr key={o.opportunity_id}>
                   <td style={{ padding:'8px 10px', verticalAlign:'middle' }}>
-                    <span title={o.assignment === 'CONTRACT' ? 'Contract' : 'Customer'} aria-label={o.assignment === 'CONTRACT' ? 'Contract' : 'Customer'} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:36,height:36,marginRight:10,verticalAlign:'middle'}}>
-                      {o.assignment === 'CONTRACT' ? <ContractIcon size={32} /> : <CustomerIcon size={32} />}
-                    </span>
+                    <AssignmentIcon assignment={o.assignment} />
                     {o.client_name}
                   </td>
                   <td style={{ padding:'8px 10px', verticalAlign:'middle' }}>
@@ -1052,9 +1085,7 @@ function Opportunities({ perms }) {
                   <td style={{ padding:'8px 10px', verticalAlign:'middle' }}>{o.salesperson}</td>
                   <td style={{ padding:'8px 10px', verticalAlign:'middle' }}>
                     {o.location_url ? (
-                      <a href={o.location_url} target="_blank" rel="noreferrer" title="Open in Google Maps" style={{display:'inline-flex',alignItems:'center'}}>
-                        <MapPinIcon size={20} />
-                      </a>
+                      <MapIconLink href={o.location_url} />
                     ) : '—'}
                   </td>
                   <td style={{ padding:'8px 10px', verticalAlign:'middle' }}>

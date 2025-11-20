@@ -90,7 +90,8 @@ function App() {
     if (user && (user.role === 'EMPLOYEE' || user.role === 'OWNER') && permissions) {
       const tabKeys = Object.keys(permissions.tabs || {});
       if (tabKeys.length > 0) {
-        return baseTabs.filter(t => t.key === 'EmployeeControl' || t.key === 'Profile' || t.key === 'FuelOps' || permissions.tabs[t.key]);
+        // Gate FuelOps by permissions as well; keep Profile and EmployeeControl always visible
+        return baseTabs.filter(t => t.key === 'EmployeeControl' || t.key === 'Profile' || permissions.tabs[t.key]);
       }
     }
     return baseTabs;
@@ -186,7 +187,7 @@ function App() {
   {tab === 'Meetings' && <Meetings perms={(user?.role === 'EMPLOYEE' || user?.role === 'OWNER') ? permissions : null} />}
   {tab === 'Reminders' && <Reminders perms={(user?.role === 'EMPLOYEE' || user?.role === 'OWNER') ? permissions : null} />}
   {tab === 'Targets' && <Targets perms={(user?.role === 'EMPLOYEE' || user?.role === 'OWNER') ? permissions : null} />}
-  {tab === 'FuelOps' && <FuelOps />}
+  {tab === 'FuelOps' && <FuelOps perms={(user?.role === 'EMPLOYEE' || user?.role === 'OWNER') ? permissions : null} />}
   {tab === 'Profile' && (
     <Profile token={localStorage.getItem('authToken')} />
   )}

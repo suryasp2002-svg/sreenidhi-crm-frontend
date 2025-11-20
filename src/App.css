@@ -54,3 +54,79 @@
   font-size: 12px;
   font-weight: 700;
 }
+
+/* FuelOps responsive layout with sticky aside */
+.ops-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+.ops-aside {
+  display: none;
+}
+.mobile-indicators-btn {
+  display: inline-flex;
+  align-items: center;
+}
+
+@media (min-width: 900px) {
+  .ops-layout {
+    grid-template-columns: 1fr 340px;
+    align-items: start;
+  }
+  .ops-aside {
+    display: block;
+    position: sticky;
+    top: 80px;
+    max-height: calc(100vh - 96px);
+    overflow: auto;
+  }
+  .mobile-indicators-btn {
+    display: none;
+  }
+}
+
+/* Slide-out drawer for mobile */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 999;
+}
+.drawer-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 90%;
+  max-width: 360px;
+  background: #fff;
+  box-shadow: -6px 0 20px rgba(0,0,0,0.15);
+  transform: translateX(100%);
+  transition: transform 240ms ease-in-out;
+  z-index: 1000;
+  padding: 12px;
+}
+.drawer-panel.open {
+  transform: translateX(0%);
+}
+
+/* Fuel Ops internal responsive grids */
+.fo-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.fo-grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+.fo-grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.fo-grid-4-action { display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:12px; align-items:start; }
+
+@media (max-width: 760px) {
+  .fo-grid-3 { grid-template-columns:1fr 1fr; }
+  .fo-grid-4 { grid-template-columns:1fr 1fr; }
+  .fo-grid-4-action { grid-template-columns:1fr 1fr; }
+}
+@media (max-width: 540px) {
+  .fo-grid-2 { grid-template-columns:1fr; }
+  .fo-grid-3 { grid-template-columns:1fr; }
+  .fo-grid-4 { grid-template-columns:1fr; }
+  .fo-grid-4-action { grid-template-columns:1fr; }
+  /* Ensure action button row spans full width when stacked */
+  .fo-grid-4-action > div:last-child { grid-column:1 / -1; }
+}

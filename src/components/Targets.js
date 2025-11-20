@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import useDebouncedValue from '../utils/useDebouncedValue';
 import useValidation from '../utils/useValidation';
 import { isAdmin, getRole } from '../utils/auth';
 import { uniqueSeed, fakeCompany } from '../utils/autofill';
@@ -9,6 +10,7 @@ function Targets({ perms }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   // All available statuses (DUPLICATE removed per request)
   const ALL_STATUSES = ['PENDING','FOLLOW_UP','COMPETITOR','ON_HOLD','CANCELLED','DONE'];
   const [statusFilter, setStatusFilter] = useState(() => ALL_STATUSES.reduce((acc, s) => { acc[s] = true; return acc; }, {}));
@@ -52,7 +54,7 @@ function Targets({ perms }) {
       const statuses = Object.entries(statusFilter).filter(([,v])=>v).map(([k])=>k);
       // Only send statuses when not selecting all
       if (statuses.length && statuses.length < ALL_STATUSES.length) params.set('status', statuses.join(','));
-      if (search) params.set('q', search);
+      if (debouncedSearch) params.set('q', debouncedSearch);
       params.set('page', String(page));
       params.set('pageSize', String(pageSize));
       const token = localStorage.getItem('authToken') || localStorage.getItem('token');
@@ -76,12 +78,12 @@ function Targets({ perms }) {
   }
 
   useEffect(() => { load(); /* initial */ }, []);
-  useEffect(() => { load(); /* filters/paging */ }, [search, statusFilter, page, pageSize]);
+  useEffect(() => { load(); /* filters/paging */ }, [debouncedSearch, statusFilter, page, pageSize]);
   // Auto-refresh every 20s
   useEffect(() => {
     const t = setInterval(() => { load(); }, 20000);
     return () => clearInterval(t);
-  }, [search, statusFilter, page, pageSize]);
+  }, [debouncedSearch, statusFilter, page, pageSize]);
 
   // Load users for assignment
   // Admin: include OWNER, EMPLOYEE, ADMIN (show all active users)

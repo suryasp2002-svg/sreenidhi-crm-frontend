@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 
 // Define the available tabs & actions centrally (Phase 1 scope)
-const AVAILABLE_TABS = ['Dashboard','Customers','Opportunities','Contracts','History','Meetings','Reminders','Targets'];
+const AVAILABLE_TABS = ['Dashboard','Customers','Opportunities','Contracts','History','Meetings','Reminders','Targets','FuelOps'];
 // Actions per tab reflecting CRM rules
 const ENTITY_ACTIONS = {
   Opportunities: ['create','edit','delete'],
@@ -9,8 +9,48 @@ const ENTITY_ACTIONS = {
   Contracts: ['create','edit'],
   Meetings: ['create','edit','delete'],
   Reminders: ['create','edit','delete'],
-  Targets: ['create','edit','delete']
+  Targets: ['create','edit','delete'],
+  FuelOps: [
+    // View permissions for Fuel Ops sub-tabs and widgets
+    'view_readings',
+    'view_meter_checks',
+    'view_at_depot',
+    'view_day_logs',
+    'view_vehicles_storage_info',
+    'view_drivers',
+    'view_purchase',
+    'view_internal_transfers',
+    'view_sales',
+    'view_mini_stock',
+    // Edit/Delete permissions for selected FuelOps sub-tabs
+    'edit_at_depot',
+    'delete_at_depot',
+    'edit_day_logs',
+    'delete_day_logs',
+    'edit_vehicles_storage_info',
+    'delete_vehicles_storage_info',
+    'edit_drivers',
+    'delete_drivers',
+    // Create permissions (Vehicles & Storage Info, Drivers)
+    'create_vehicles_storage_info',
+    'create_drivers'
+  ]
 };
+
+// Logical list of FuelOps sub-tabs for UI grouping
+const FUELOPS_SUBTABS = [
+  { key: 'readings', label: 'Readings' },
+  { key: 'meter_checks', label: 'Fuel Meter Checks' },
+  { key: 'at_depot', label: 'At Depot' },
+  { key: 'day_logs', label: 'Day Logs' },
+  { key: 'vehicles_storage_info', label: 'Vehicles & Storage Info' },
+  { key: 'drivers', label: 'Drivers' },
+  { key: 'purchase', label: 'Purchase' },
+  { key: 'internal_transfers', label: 'Internal Transfers' },
+  { key: 'sales', label: 'Sales' }
+];
+const FUELOPS_EDIT_DELETE = new Set(['at_depot','day_logs','vehicles_storage_info','drivers']);
+const FUELOPS_CREATE = new Set(['vehicles_storage_info','drivers']);
 
 export default function EmployeeControl({ token, currentUserRole = 'OWNER', currentUserId }) {
   const [users, setUsers] = useState([]); // all users except maybe owner for selection
@@ -423,26 +463,117 @@ export default function EmployeeControl({ token, currentUserRole = 'OWNER', curr
               </label>
             ))}
           </div>
+          {/* FuelOps sub-tabs selector (controls view_* permissions) */}
+          {tabs['FuelOps'] && (
+            <div style={{marginTop:12, border:'1px solid #e5e7eb', borderRadius:8, padding:12, background:'#fff'}}>
+              <div style={{fontWeight:600, marginBottom:8}}>FuelOps Sub-Tabs</div>
+              <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
+                {FUELOPS_SUBTABS.map(st => {
+                  const k = `FuelOps.view_${st.key}`;
+                  return (
+                    <label key={st.key} style={chipLabel()}> 
+                      <input
+                        type="checkbox"
+                        checked={!!actions[k]}
+                        onChange={()=>toggleAction('FuelOps', `view_${st.key}`)}
+                      />
+                      <span>{st.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              {/* Mini Stock Indicator visibility */}
+              <div style={{marginTop:10, display:'flex', flexWrap:'wrap', gap:8}}>
+                <label style={chipLabel()}>
+                  <input
+                    type="checkbox"
+                    checked={!!actions['FuelOps.view_mini_stock']}
+                    onChange={()=>toggleAction('FuelOps','view_mini_stock')}
+                  />
+                  <span>Mini Stock Indicator</span>
+                </label>
+              </div>
+            </div>
+          )}
         </div>
         <div>
           <h3 style={subhead}>Actions</h3>
           <div style={{display:'flex', flexDirection:'column', gap:10}}>
-            {Object.entries(ENTITY_ACTIONS).map(([entity, acts]) => (
-              <div key={entity} style={{border:'1px solid #eee', borderRadius:8, padding:12}}>
-                <div style={{fontWeight:600, marginBottom:6}}>{entity}</div>
-                <div style={{display:'flex', flexWrap:'wrap', gap:12}}>
-                  {acts.map(a => {
-                    const k = `${entity}.${a}`;
-                    return (
-                      <label key={k} style={chipLabel(!tabs[entity] ? '#9ca3af' : undefined)}>
-                        <input type="checkbox" checked={!!actions[k]} onChange={()=>toggleAction(entity,a)} disabled={!tabs[entity]} />
-                        <span>{a}</span>
-                      </label>
-                    );
-                  })}
+            {Object.entries(ENTITY_ACTIONS).map(([entity, acts]) => {
+              if (entity !== 'FuelOps') {
+                return (
+                  <div key={entity} style={{border:'1px solid #eee', borderRadius:8, padding:12}}>
+                    <div style={{fontWeight:600, marginBottom:6}}>{entity}</div>
+                    <div style={{display:'flex', flexWrap:'wrap', gap:12}}>
+                      {acts.map(a => {
+                        const k = `${entity}.${a}`;
+                        return (
+                          <label key={k} style={chipLabel(!tabs[entity] ? '#9ca3af' : undefined)}>
+                            <input type="checkbox" checked={!!actions[k]} onChange={()=>toggleAction(entity,a)} disabled={!tabs[entity]} />
+                            <span>{a}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              }
+              // Custom rendering for FuelOps: group by sub-tab and expose edit/delete for selected sub-tabs
+              return (
+                <div key={entity} style={{border:'1px solid #eee', borderRadius:8, padding:12}}>
+                  <div style={{fontWeight:600, marginBottom:6}}>FuelOps</div>
+                  <div style={{display:'grid', gridTemplateColumns:'1fr', gap:10}}>
+                    {FUELOPS_SUBTABS.map(st => {
+                      const viewKey = `${entity}.view_${st.key}`;
+                      const canEditDel = FUELOPS_EDIT_DELETE.has(st.key);
+                      const editKey = `${entity}.edit_${st.key}`;
+                      const delKey = `${entity}.delete_${st.key}`;
+                      const canCreate = FUELOPS_CREATE.has(st.key);
+                      const createKey = `${entity}.create_${st.key}`;
+                      return (
+                        <div key={st.key} style={{border:'1px dashed #e5e7eb', borderRadius:8, padding:8}}>
+                          <div style={{fontWeight:600, marginBottom:6}}>{st.label}</div>
+                          <div style={{display:'flex', flexWrap:'wrap', gap:12}}>
+                            <label style={chipLabel(!tabs[entity] ? '#9ca3af' : undefined)}>
+                              <input type="checkbox" checked={!!actions[viewKey]} onChange={()=>toggleAction(entity,`view_${st.key}`)} disabled={!tabs[entity]} />
+                              <span>view</span>
+                            </label>
+                            {canCreate && (
+                              <label style={chipLabel(!tabs[entity] ? '#9ca3af' : undefined)}>
+                                <input type="checkbox" checked={!!actions[createKey]} onChange={()=>toggleAction(entity,`create_${st.key}`)} disabled={!tabs[entity]} />
+                                <span>create</span>
+                              </label>
+                            )}
+                            {canEditDel && (
+                              <>
+                                <label style={chipLabel(!tabs[entity] ? '#9ca3af' : undefined)}>
+                                  <input type="checkbox" checked={!!actions[editKey]} onChange={()=>toggleAction(entity,`edit_${st.key}`)} disabled={!tabs[entity]} />
+                                  <span>edit</span>
+                                </label>
+                                <label style={chipLabel(!tabs[entity] ? '#9ca3af' : undefined)}>
+                                  <input type="checkbox" checked={!!actions[delKey]} onChange={()=>toggleAction(entity,`delete_${st.key}`)} disabled={!tabs[entity]} />
+                                  <span>delete</span>
+                                </label>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {/* Mini Stock Indicator widget */}
+                    <div style={{border:'1px dashed #e5e7eb', borderRadius:8, padding:8}}>
+                      <div style={{fontWeight:600, marginBottom:6}}>Mini Stock Indicator</div>
+                      <div style={{display:'flex', flexWrap:'wrap', gap:12}}>
+                        <label style={chipLabel(!tabs[entity] ? '#9ca3af' : undefined)}>
+                          <input type="checkbox" checked={!!actions[`${entity}.view_mini_stock`]} onChange={()=>toggleAction(entity,'view_mini_stock')} disabled={!tabs[entity]} />
+                          <span>view</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

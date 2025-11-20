@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import useDebouncedValue from '../utils/useDebouncedValue';
 import { isValidGSTIN, isValidIndianPhoneLoose, normalizeIndianPhone, isValidEmail, isNonNegativeNumber } from '../utils/validators';
 import SortIcon from './SortIcon';
 import ClientProfileModal from './ClientProfileModal';
@@ -26,6 +27,7 @@ function Contracts({ perms }) {
   const [error, setError] = useState(null);
   const [editId, setEditId] = useState(null);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [listPage, setListPage] = useState(1);
   const [listPageSize, setListPageSize] = useState(25);
   const [listTotal, setListTotal] = useState(0);
@@ -52,7 +54,7 @@ function Contracts({ perms }) {
       setLoading(true); setError(null);
       try {
         const params = new URLSearchParams();
-        if (search) params.set('q', search);
+        if (debouncedSearch) params.set('q', debouncedSearch);
         params.set('page', String(listPage));
         params.set('pageSize', String(listPageSize));
         const res = await fetch(`/api/contracts?${params.toString()}`);
@@ -71,7 +73,7 @@ function Contracts({ perms }) {
     }
     loadPage();
     return () => { aborted = true; };
-  }, [search, listPage, listPageSize]);
+  }, [debouncedSearch, listPage, listPageSize]);
 
   useEffect(() => { (async () => { try { setIsAdminUser(await isAdmin()); } catch { setIsAdminUser(false); } })(); }, []);
 
@@ -180,7 +182,7 @@ function Contracts({ perms }) {
 
   // Sorting helper
   const sortedFiltered = useMemo(() => {
-    const q = search.toLowerCase();
+    const q = (debouncedSearch || '').toLowerCase();
     const filtered = contracts.filter(c =>
       c.client_name?.toLowerCase().includes(q) || c.contract_id?.toLowerCase().includes(q)
     );
@@ -207,7 +209,7 @@ function Contracts({ perms }) {
       return 0;
     };
     return [...filtered].sort(cmp);
-  }, [contracts, search, sort]);
+  }, [contracts, debouncedSearch, sort]);
 
   function toggleSort(key) {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });

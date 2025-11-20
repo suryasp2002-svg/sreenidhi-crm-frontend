@@ -7,7 +7,7 @@ import { uniqueSeed, futureDate, timePlusMinutes } from '../utils/autofill';
 function fmtDateTime(dt) {
   if (!dt) return '';
   try {
-    const d = new Date(dt);
+    const d = asDate(dt);
     if (isNaN(d.getTime())) return String(dt);
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth()+1).padStart(2,'0');
@@ -435,7 +435,7 @@ export default function Meetings({ perms }) {
     // Split starts_at into date/time
     let date = '', time = '';
     if (m.starts_at) {
-      const d = new Date(m.starts_at);
+      const d = asDate(m.starts_at);
       if (!isNaN(d.getTime())) {
         date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
         time = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
@@ -614,21 +614,48 @@ export default function Meetings({ perms }) {
 
   const can = perms ? { create: !!perms?.actions?.['Meetings.create'], edit: !!perms?.actions?.['Meetings.edit'], delete: !!perms?.actions?.['Meetings.delete'] } : { create: true, edit: true, delete: true };
   
-  // Assignment markers (consistent with Opportunities)
-  const CustomerIcon = ({ size = 20 }) => (
+  // Assignment markers & maps icon with PNG -> SVG -> inline fallback sequence
+  const InlineCustomerIcon = ({ size = 20 }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
       <circle cx="12" cy="12" r="10" fill="#111" opacity="0.08" />
       <circle cx="12" cy="10" r="3.3" fill="#111" />
       <path d="M5.5 18.4c1.7-3 4-4.4 6.5-4.4s4.8 1.4 6.5 4.4" fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
-  const ContractIcon = ({ size = 20 }) => (
+  const InlineContractIcon = ({ size = 20 }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
       <rect x="5" y="3" width="11" height="18" rx="2" ry="2" fill="#111" opacity="0.08" stroke="#111" />
       <path d="M8 7h6M8 10h6M8 13h4" stroke="#111" strokeWidth="2" strokeLinecap="round" />
       <path d="M14.5 15.5l3.8 3.8-2.8.7.7-2.8-1.7-1.7z" fill="#111" />
     </svg>
   );
+  const InlineMapIcon = ({ size = 20 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <path d="M12 2c3.1 0 5.6 2.5 5.6 5.6 0 4.2-5.6 10.4-5.6 10.4S6.4 11.8 6.4 7.6C6.4 4.5 8.9 2 12 2z" fill="#111" opacity="0.12" />
+      <circle cx="12" cy="7.2" r="2.8" fill="#111" />
+      <path d="M4 12l5.5 2.2 5-1.8L20 15" stroke="#111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  );
+  function ProfileIcon({ contract, size = 32 }) {
+    const [stage, setStage] = React.useState('png'); // png -> svg -> inline
+    if (stage === 'inline') return contract ? <InlineContractIcon size={size} /> : <InlineCustomerIcon size={size} />;
+    const pngSrc = contract ? '/assets/contract.png' : '/assets/customer.png';
+    const svgSrc = contract ? '/assets/icons/contract.svg' : '/assets/icons/customer.svg';
+    return stage === 'png' ? (
+      <img src={pngSrc} width={size} height={size} alt={contract ? 'Contract' : 'Customer'} style={{borderRadius:4,objectFit:'cover'}} onError={() => setStage('svg')} />
+    ) : (
+      <img src={svgSrc} width={size} height={size} alt={contract ? 'Contract' : 'Customer'} style={{borderRadius:4,objectFit:'cover'}} onError={() => setStage('inline')} />
+    );
+  }
+  function MapIcon({ size = 20 }) {
+    const [stage, setStage] = React.useState('png');
+    if (stage === 'inline') return <InlineMapIcon size={size} />;
+    return stage === 'png' ? (
+      <img src="/assets/maps.png" width={size} height={size} alt="Map" style={{borderRadius:4,objectFit:'cover'}} onError={() => setStage('svg')} />
+    ) : (
+      <img src="/assets/icons/maps.svg" width={size} height={size} alt="Map" style={{borderRadius:4,objectFit:'cover'}} onError={() => setStage('inline')} />
+    );
+  }
   return (
     <div>
       {error && <div style={{color:'red',padding:'8px'}}>{error}</div>}
@@ -675,7 +702,7 @@ export default function Meetings({ perms }) {
                 ) : clientOptions.map(opt => (
                   <div key={`${opt.entity_type}-${opt.opportunity_id}-${opt.contract_id || opt.customer_id}`} style={{padding:'8px 10px',cursor:'pointer',display:'flex',gap:10,alignItems:'center'}} onMouseDown={() => chooseClient(opt)}>
                     <span title={opt.contract_id ? 'Contract' : 'Customer'} aria-label={opt.contract_id ? 'Contract' : 'Customer'} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:36}}>
-                      {opt.contract_id ? <ContractIcon size={32} /> : <CustomerIcon size={32} />}
+                      <ProfileIcon contract={!!opt.contract_id} size={32} />
                     </span>
                     <div>
                       <div style={{fontWeight:600}}>{opt.client_name}</div>
@@ -986,14 +1013,14 @@ export default function Meetings({ perms }) {
               <tr key={m.id}>
                 <td>
                   <span title={m.contract_id ? 'Contract' : 'Customer'} aria-label={m.contract_id ? 'Contract' : 'Customer'} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:36,marginRight:8,verticalAlign:'middle'}}>
-                    {m.contract_id ? <ContractIcon size={32} /> : <CustomerIcon size={32} />}
+                    <ProfileIcon contract={!!m.contract_id} size={32} />
                   </span>
                   {m.client_name || ''}
                 </td>
                 <td>{m.id || ''}</td>
                 <td>{m.subject}</td>
                 <td>{fmtDateTime(m.starts_at || m.when_ts)}</td>
-                <td>{m.location || ''}</td>
+                <td>{m.location ? (<span style={{display:'inline-flex',alignItems:'center',gap:6}}><MapIcon size={20} /> {m.location}</span>) : ''}</td>
                 <td>{m.assigned_to || ''}</td>
                 <td>
                   {(() => {
@@ -1003,7 +1030,7 @@ export default function Meetings({ perms }) {
                       ? { border:'1px solid #fecaca', background:'#fef2f2', color:'#991b1b', borderRadius:999, padding:'2px 6px', fontSize:11, fontWeight:700 }
                       : { border:'1px solid #bbf7d0', background:'#ecfdf5', color:'#166534', borderRadius:999, padding:'2px 6px', fontSize:11, fontWeight:700 };
                     return (
-                      <span title={(m.starts_at || m.when_ts) ? new Date(m.starts_at || m.when_ts).toLocaleString() : ''} style={style}>
+                      <span title={(m.starts_at || m.when_ts) ? asDate(m.starts_at || m.when_ts).toLocaleString() : ''} style={style}>
                         {past ? `Overdue by ${info.hm}` : `Starts in ${info.hm}`}
                       </span>
                     );

@@ -196,7 +196,7 @@ export default function Reminders({ perms }) {
       const { from, to } = scopes[scopeKey]();
       const todayStart = startOfDay(new Date());
       return items.filter(it => {
-        const t = new Date(it.when);
+        const t = asDate(it.when);
         const inRange = (t >= from && t <= to);
         // For Today panels, also include overdue PENDING reminders (CALL/EMAIL) regardless of date
         if (scopeKey === 'today') {
@@ -338,7 +338,6 @@ export default function Reminders({ perms }) {
         setLiveMeetings(Array.from(meetingsMap.values()));
         // Keep today's COMPLETED meetings separate to avoid cross-panel pollution/flicker
         setTodayCompletedMeetings(Array.isArray(leftCompletedToday) ? leftCompletedToday : []);
-        try { await loadSummary(); } catch {}
       }
     } catch (e) {
       if (e && (e.name === 'AbortError' || e.code === 20)) return; // ignore aborts
@@ -400,24 +399,76 @@ export default function Reminders({ perms }) {
     return token ? { 'Authorization': `Bearer ${token}` } : {};
   }
 
+  // Feature flags to disable heavy totals sections
+  const SHOW_OVERVIEW_TOTALS = false;
+  const SHOW_EMPLOYEE_TOTALS = false;
   useEffect(() => {
     if (activeTab !== 'overview') return;
     // Wait until self id is known to avoid loading mixed data for all roles
     if (!myUserId) return;
     loadLive();
     loadSummary();
-    loadOverviewTotals();
+    if (SHOW_OVERVIEW_TOTALS) {
+      loadOverviewTotals();
+    }
   }, [activeTab, leftScope, rightScope, myRole, myUserId]);
 
   // Load overview extended totals for My Overview (day/range headers)
   async function loadOverviewTotals() {
     if (activeTab !== 'overview') { setOverviewTotals(null); return; }
     try {
+      // Simple client-side cache to avoid frequent refetches when toggling scopes
+      if (!window.__overviewTotalsCache) {
+        window.__overviewTotalsCache = { ts: 0, data: null };
+      }
+      const cache = window.__overviewTotalsCache;
+      if (cache && cache.data && (Date.now() - cache.ts < 10000)) {
+        setOverviewTotals(cache.data);
+        return;
+      }
       const token = localStorage.getItem('authToken') || localStorage.getItem('token');
-      const res = await fetch('/api/reminders/summary/overview-extended', { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined });
-      if (!res.ok) throw new Error('Failed to load overview totals');
+      let res = await fetch('/api/reminders/summary/overview-extended', { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined });
+      if (!res.ok) {
+        // Fallback to legacy overview summary to avoid blank UI
+        const res2 = await fetch('/api/reminders/summary/overview', { headers: token ? { 'Authorization': `Bearer ${token}` } : undefined });
+        if (!res2.ok) throw new Error('Failed to load overview totals');
+        const legacy = await res2.json();
+        const buckets = legacy && legacy.buckets ? legacy.buckets : {};
+        const sumStatus = (bucket, status) => {
+          const b = buckets && buckets[bucket] ? buckets[bucket] : {};
+          const c = (b.CALL && b.CALL[status] ? b.CALL[status] : 0) + (b.EMAIL && b.EMAIL[status] ? b.EMAIL[status] : 0);
+          return Number(c) || 0;
+        };
+        const overdue = sumStatus('delayed','PENDING');
+        const today = {
+          overdue,
+          pending: sumStatus('today','PENDING'),
+          done: sumStatus('today','DONE'),
+          sent: sumStatus('today','SENT'),
+          failed: sumStatus('today','FAILED')
+        };
+        const tomorrow = {
+          overdue: 0,
+          pending: sumStatus('tomorrow','PENDING'),
+          done: sumStatus('tomorrow','DONE'),
+          sent: sumStatus('tomorrow','SENT'),
+          failed: sumStatus('tomorrow','FAILED')
+        };
+        const total = {
+          overdue,
+          pending: today.pending + tomorrow.pending,
+          done: today.done + tomorrow.done,
+          sent: today.sent + tomorrow.sent,
+          failed: today.failed + tomorrow.failed
+        };
+        const data = { total, today, tomorrow, week: { overdue:0,pending:0,done:0,sent:0,failed:0 }, month: { overdue:0,pending:0,done:0,sent:0,failed:0 }, generatedAt: new Date().toISOString() };
+        setOverviewTotals(data);
+        try { window.__overviewTotalsCache = { ts: Date.now(), data }; } catch {}
+        return;
+      }
       const data = await res.json();
       setOverviewTotals(data);
+      try { window.__overviewTotalsCache = { ts: Date.now(), data }; } catch {}
     } catch (e) {
       setOverviewTotals(null);
     }
@@ -442,7 +493,9 @@ export default function Reminders({ perms }) {
   // Trigger employee totals load when Employee tab active and selection changes
   useEffect(() => {
     if (activeTab === 'employee') {
-      loadEmployeeOverviewTotals();
+      if (SHOW_EMPLOYEE_TOTALS) {
+        loadEmployeeOverviewTotals();
+      }
     }
   }, [activeTab, selectedUserId, myRole]);
 
@@ -878,8 +931,8 @@ export default function Reminders({ perms }) {
   })();
   return (
     <div style={{padding:'16px 0'}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,gap:12}}>
-        <div style={{display:'flex',alignItems:'center',gap:12}}>
+      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:12,gap:12,flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
           <div style={{fontWeight:700, fontSize:18}}>Reminders</div>
           <div style={{display:'inline-flex', gap:8, marginLeft:8}}>
             <button
@@ -905,11 +958,11 @@ export default function Reminders({ perms }) {
             )}
           </div>
           {can.create && (
-            <div style={{display:'inline-flex', gap:8}}>
+            <div style={{display:'inline-flex', gap:8, flexWrap:'wrap'}}>
               <button
-                onClick={() => { setShowCreate(true); /* open empty modal */ }}
+                onClick={() => { setShowCreate(true); }}
                 className="btn"
-                style={{padding:'8px 14px', borderRadius:6, background:'#111', color:'#fff', border:'1px solid #111', fontWeight:600}}
+                style={{padding:'8px 14px', borderRadius:6, background:'#111', color:'#fff', border:'1px solid #111', fontWeight:600, minWidth:160}}
               >+ Create Reminder</button>
             </div>
           )}
@@ -937,8 +990,8 @@ export default function Reminders({ perms }) {
 
       {activeTab === 'overview' && (
         <>
-      {/* Totals for My Overview */}
-      <TotalsBar />
+      {/* Totals for My Overview (disabled via flag) */}
+      {SHOW_OVERVIEW_TOTALS && <TotalsBar />}
       {/* Meetings row */}
       <Section title="Meetings">
         <TwoPanels
@@ -1107,8 +1160,8 @@ export default function Reminders({ perms }) {
               </div>
             </div>
             <div style={{padding:12}}>
-              {/* Employee Totals (dynamic by selected employee) */}
-              {(() => {
+              {/* Employee Totals (disabled via flag) */}
+              {SHOW_EMPLOYEE_TOTALS && (() => {
                 const totals = empOverviewTotals;
                 if (!totals) {
                   return (
@@ -1793,6 +1846,7 @@ function Panel({ title, scopeKey, items, onMarkDone, onMarkFailed, onEdit, meeti
             ) : (
               <div style={{flex:1, minWidth:0}}>
                 <div style={{fontWeight:600, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                  {it.kind === 'MEETING' && (<MeetingIcon it={it} />)}
                   {(it.kind === 'CALL' || it.kind === 'EMAIL') ? (
                     <Tooltip content={renderReminderTooltip(it)} delayShow={400} delayHide={120}>
                       <span style={{cursor:'help'}}>{it.title}</span>
@@ -1978,6 +2032,13 @@ function badgeStyle(status) {
   return { ...base, ...style };
 }
 
+// Resolve meeting icon (contract vs customer). Falls back to customer if unknown.
+function meetingIconPath(it) {
+  if (!it) return '/assets/customer.png';
+  const isContract = !!(it.contract_id || it.contract_name || (it.profile_type && /contract/i.test(it.profile_type)));
+  return isContract ? '/assets/contract.png' : '/assets/customer.png';
+}
+
 // miniBadgeStyle removed; using main status chip for all
 
 // Map reminder row to UI item shape used by Panel
@@ -2028,7 +2089,55 @@ function toMeetingItem(m) {
     created_by_user_id: m.created_by_user_id || null,
     created_by_name: m.created_by_full_name || m.created_by_username || m.created_by_email || m.created_by || '',
     created_by_username: m.created_by_username || '',
+    // Potential contract-related fields (if backend supplies them)
+    contract_id: m.contract_id || null,
+    contract_name: m.contract_name || '',
+    profile_type: m.profile_type || m.type || '',
   };
+}
+
+// Inline SVG fallbacks (match Opportunities style)
+const CustomerIcon = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+    <circle cx="12" cy="12" r="10" fill="#111" opacity="0.08" />
+    <circle cx="12" cy="10" r="3.3" fill="#111" />
+    <path d="M5.5 18.4c1.7-3 4-4.4 6.5-4.4s4.8 1.4 6.5 4.4" fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
+const ContractIcon = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+    <rect x="5" y="3" width="11" height="18" rx="2" ry="2" fill="#111" opacity="0.08" stroke="#111" />
+    <path d="M8 7h6M8 10h6M8 13h4" stroke="#111" strokeWidth="2" strokeLinecap="round" />
+    <path d="M14.5 15.5l3.8 3.8-2.8.7.7-2.8-1.7-1.7z" fill="#111" />
+  </svg>
+);
+
+function MeetingIcon({ it }) {
+  const [stage, setStage] = React.useState('png'); // png -> svg -> inline
+  const isContract = !!(it && (it.contract_id || it.contract_name || (it.profile_type && /contract/i.test(it.profile_type))));
+  const svgSrc = isContract ? '/assets/icons/contract.svg' : '/assets/icons/customer.svg';
+  if (stage === 'inline') return isContract ? <ContractIcon size={20} /> : <CustomerIcon size={20} />;
+  return (
+    stage === 'png' ? (
+      <img
+        src={meetingIconPath(it)}
+        alt={isContract ? 'Contract' : 'Customer'}
+        width={20}
+        height={20}
+        style={{borderRadius:4, objectFit:'cover'}}
+        onError={() => setStage('svg')}
+      />
+    ) : (
+      <img
+        src={svgSrc}
+        alt={isContract ? 'Contract' : 'Customer'}
+        width={20}
+        height={20}
+        style={{borderRadius:4, objectFit:'cover'}}
+        onError={() => setStage('inline')}
+      />
+    )
+  );
 }
 
 function chipIcon(kind, status) {

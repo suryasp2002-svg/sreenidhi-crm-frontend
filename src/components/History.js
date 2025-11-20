@@ -68,6 +68,24 @@ const REMINDER_LABELS = {
   created_by: 'Created by',
   created_by_user_id: 'Created by (user)'
 };
+const FUEL_OP_LABELS = {
+  opening_liters: 'Opening liters',
+  closing_liters: 'Closing liters',
+  opening_at: 'Opening time',
+  closing_at: 'Closing time',
+  note: 'Note',
+  driver_name: 'Driver',
+  driver_code: 'Driver code',
+  sale_volume_liters: 'Sale liters',
+  transfer_volume: 'Transfer liters',
+  to_vehicle: 'To vehicle',
+  performed_at: 'Performed at',
+  sale_date: 'Sale date',
+  transfer_date: 'Transfer date',
+  transfer_time: 'Transfer time',
+  lot_code_after: 'Lot code after',
+  lot_code: 'Lot code'
+};
 function toPlainChangeLines(diff, labelsMap) {
   const keys = Object.keys(diff || {});
   const lines = [];
@@ -95,7 +113,7 @@ function History() {
     dateFrom: '',
     dateTo: ''
   });
-  const [activeTab, setActiveTab] = useState('stage'); // 'stage' | 'expenses' | 'passwords' | 'meetings_v2' | 'reminders_v2' | 'reminders_email'
+  const [activeTab, setActiveTab] = useState('stage'); // 'stage' | 'expenses' | 'passwords' | 'meetings_v2' | 'reminders_v2' | 'reminders_email' | 'fuel_ops_audit'
   // Password audit state
   const [pwdItems, setPwdItems] = useState([]);
   const [pwdLoading, setPwdLoading] = useState(false);
@@ -145,6 +163,18 @@ function History() {
   const [reExpanded, setReExpanded] = useState({});
   const [rePage, setRePage] = useState(1);
   const [rePageSize, setRePageSize] = useState(50);
+  // Fuel Ops audit state
+  const [foItems, setFoItems] = useState([]);
+  const [foLoading, setFoLoading] = useState(false);
+  const [foError, setFoError] = useState(null);
+  const [foPage, setFoPage] = useState(1);
+  const [foPageSize, setFoPageSize] = useState(50);
+  const [foExpanded, setFoExpanded] = useState({});
+  const [foUnitCode, setFoUnitCode] = useState('');
+  const [foAction, setFoAction] = useState('');
+  const [foEntityType, setFoEntityType] = useState('');
+  const [foTab, setFoTab] = useState('');
+  const [foSection, setFoSection] = useState('');
 
   const entityParam = useMemo(() => {
     const enabled = Object.entries(filters.entityType).filter(([,v]) => v).map(([k]) => k);
@@ -219,6 +249,9 @@ function History() {
     if (activeTab === 'reminders_email') {
       fetchRemindersEmailSelected(reOperationId.trim(), reReminderId.trim(), reStatus, 1, rePageSize);
     }
+    if (activeTab === 'fuel_ops_audit') {
+      fetchFuelOpsAudit(1, foPageSize);
+    }
     if (activeTab === 'passwords') {
       fetchPasswordAudit(1, pwdPageSize);
     }
@@ -262,6 +295,16 @@ function History() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reOperationId, reReminderId, reStatus, rePageSize, filters.dateFrom, filters.dateTo, activeTab]);
+
+  // Dynamic fetch for Fuel Ops Audit when filters change
+  useEffect(() => {
+    if (activeTab !== 'fuel_ops_audit') return;
+    const t = setTimeout(() => {
+      fetchFuelOpsAudit(1, foPageSize);
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [foUnitCode, foAction, foEntityType, foTab, foSection, foPageSize, filters.q, filters.dateFrom, filters.dateTo, activeTab]);
 
   // Dynamic filters for Password Audit
   useEffect(() => {
@@ -416,6 +459,40 @@ function History() {
     }
   }
 
+  async function fetchFuelOpsAudit(p = foPage, s = foPageSize) {
+    setFoLoading(true);
+    setFoError(null);
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const params = new URLSearchParams();
+      if (filters.q) params.append('q', filters.q);
+      if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
+      if (filters.dateTo) params.append('dateTo', filters.dateTo);
+      if (foUnitCode) params.append('unitCode', foUnitCode);
+      if (foAction) params.append('action', foAction);
+      if (foEntityType) params.append('entityType', foEntityType);
+      if (foTab) params.append('tab', foTab);
+      if (foSection) params.append('section', foSection);
+      params.append('page', String(p));
+      params.append('pageSize', String(s));
+      const res = await fetch(`/api/fuel-ops/audit?${params.toString()}`, { headers });
+      if (!res.ok) {
+        let msg = 'Failed to fetch fuel ops audit';
+        try { const t = await res.json(); if (t?.error) msg = t.error; } catch {}
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      setFoItems(Array.isArray(data.items) ? data.items : []);
+      setFoPage(p);
+      setFoPageSize(s);
+    } catch (err) {
+      setFoError(err.message);
+    } finally {
+      setFoLoading(false);
+    }
+  }
+
   function exportCSV() {
     if (!items.length) return;
     const headers = ['Opportunity ID', 'Client Name', 'Entity', 'From', 'To', 'Reason Code', 'Reason Text', 'Changed By', 'Action Time'];
@@ -486,6 +563,7 @@ function History() {
           <button className={activeTab==='passwords'?'btn':'btn ghost'} type="button" style={{marginLeft:8}} onClick={() => setActiveTab('passwords')}>Password Audit</button>
           <button className={activeTab==='reminders_v2'?'btn':'btn ghost'} type="button" style={{marginLeft:8}} onClick={() => setActiveTab('reminders_v2')}>Reminders Audit (v2)</button>
           <button className={activeTab==='reminders_email'?'btn':'btn ghost'} type="button" style={{marginLeft:8}} onClick={() => setActiveTab('reminders_email')}>Reminders Email Selected</button>
+          <button className={activeTab==='fuel_ops_audit'?'btn':'btn ghost'} type="button" style={{marginLeft:8}} onClick={() => setActiveTab('fuel_ops_audit')}>Fuel Ops Audit</button>
         </div>
         <div className="grid cols-4">
           <div className="row" style={{gridColumn:'1/-1'}}>
@@ -614,6 +692,56 @@ function History() {
                 </select>
               </div>
               <div className="row" style={{gridColumn:'1/-1'}} />
+            </>
+          )}
+          {activeTab === 'fuel_ops_audit' && (
+            <>
+              <div className="row">
+                <label className="block">Unit Code</label>
+                <input value={foUnitCode} onChange={e => setFoUnitCode(e.target.value)} placeholder="e.g., TN01, TANKER-1" />
+              </div>
+              <div className="row">
+                <label className="block">Action</label>
+                <select value={foAction} onChange={e => setFoAction(e.target.value)}>
+                  <option value="">All</option>
+                  <option value="CREATE">CREATE</option>
+                  <option value="UPDATE">UPDATE</option>
+                  <option value="DELETE">DELETE</option>
+                </select>
+              </div>
+              <div className="row">
+                <label className="block">Entity Type</label>
+                <select value={foEntityType} onChange={e => setFoEntityType(e.target.value)}>
+                  <option value="">All</option>
+                  <option value="sale">sale</option>
+                  <option value="transfer_out">transfer_out</option>
+                  <option value="transfer_in">transfer_in</option>
+                  <option value="testing">testing</option>
+                  <option value="day_log">day_log</option>
+                  <option value="opening_reading">opening_reading</option>
+                  <option value="closing_reading">closing_reading</option>
+                  <option value="trip">trip</option>
+                  <option value="load">load</option>
+                </select>
+              </div>
+              <div className="row" style={{gridColumn:'1/-1'}}>
+                <label className="block">Tab / Section</label>
+                <div style={{display:'flex', gap:8}}>
+                  <select value={foTab} onChange={e => setFoTab(e.target.value)}>
+                    <option value="">Any Tab</option>
+                    <option value="At Depot">At Depot</option>
+                    <option value="Day Logs">Day Logs</option>
+                  </select>
+                  <select value={foSection} onChange={e => setFoSection(e.target.value)}>
+                    <option value="">Any Section</option>
+                    <option value="opening">opening</option>
+                    <option value="closing">closing</option>
+                    <option value="logs">logs</option>
+                    <option value="ops">ops</option>
+                    <option value="info">info</option>
+                  </select>
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -949,7 +1077,7 @@ function History() {
           <table id="remindersEmailSelectedAuditTable">
             <thead>
               <tr>
-                <th>Operation ID</th>
+                <th>Client Name</th>
                 <th>Type</th>
                 <th>Reminder ID</th>
                 <th>Performed By</th>
@@ -964,7 +1092,7 @@ function History() {
             </thead>
             <tbody>
               {reItems.length === 0 ? (
-                <tr><td colSpan={10} className="muted">No entries</td></tr>
+                <tr><td colSpan={11} className="muted">No entries</td></tr>
               ) : reItems.map((i, idx) => {
                 const expanded = !!reExpanded[idx];
                 // estimate recipient count
@@ -975,7 +1103,7 @@ function History() {
                 const err = i.error ? String(i.error).slice(0,120) + (String(i.error).length>120?'…':'') : '';
                 return (
                   <tr key={`${i.operation_id}-${i.reminder_id}-${i.performed_at}-${idx}`}>
-                    <td style={{fontFamily:'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'}}>{i.operation_id}</td>
+                    <td>{i.client_name || ''}</td>
                     <td>{i.reminder_type || ''}</td>
                     <td>{i.reminder_id}</td>
                     <td>{i.performed_by || i.performed_by_user_id || ''}</td>
@@ -1005,6 +1133,108 @@ function History() {
                               )}
                             </>
                           )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+      )}
+
+      {activeTab === 'fuel_ops_audit' && (
+      <div className="card" style={{marginTop:24}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <h3 style={{margin:0}}>Fuel Ops Audit</h3>
+          <div style={{display:'flex',gap:16,alignItems:'center'}}>
+            <select value={foPageSize} onChange={e => { const v = Number(e.target.value); setFoPageSize(v); fetchFuelOpsAudit(1, v); }}>
+              {[25,50,100].map(n => <option key={n} value={n}>{n}/page</option>)}
+            </select>
+            <div>
+              <button className="btn" type="button" style={{background:'#eee',color:'#222',marginRight:8}} onClick={() => fetchFuelOpsAudit(Math.max(foPage-1,1), foPageSize)}>Prev</button>
+              <button className="btn" type="button" style={{background:'#eee',color:'#222'}} onClick={() => fetchFuelOpsAudit(foPage+1, foPageSize)}>Next</button>
+            </div>
+            <button className="btn" type="button" style={{background:'#eee',color:'#222'}} onClick={() => fetchFuelOpsAudit(foPage, foPageSize)}>Refresh</button>
+          </div>
+        </div>
+        {foLoading && <div style={{padding:'8px'}}>Loading fuel ops audit…</div>}
+        {foError && <div style={{color:'red',padding:'8px'}}>{foError}</div>}
+        {!foLoading && !foError && (
+          <table id="fuelOpsAuditTable">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Tab</th>
+                <th>Section</th>
+                <th>Action</th>
+                <th>Entity</th>
+                <th>Unit Code</th>
+                <th>Op Time</th>
+                <th>Updated</th>
+                <th>Liters</th>
+                <th>Meter</th>
+                <th>Changes</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {foItems.length === 0 ? (
+                <tr><td colSpan={12} className="muted">No audit entries</td></tr>
+              ) : foItems.map((i, idx) => {
+                let diff = {};
+                // Only compute granular diffs for UPDATE actions; skip CREATE (new record) and DELETE (removal)
+                if (i.action === 'UPDATE' && i.payload_old && i.payload_new) {
+                  const keys = new Set([...Object.keys(i.payload_old||{}), ...Object.keys(i.payload_new||{})]);
+                  keys.forEach(k => {
+                    const a = i.payload_old?.[k];
+                    const b = i.payload_new?.[k];
+                    // Include only when both defined and different (true change), or when b defined and a defined and changed
+                    if (a !== undefined && b !== undefined && JSON.stringify(a) !== JSON.stringify(b)) {
+                      diff[k] = { from: a, to: b };
+                    }
+                    // Field removed: a defined, b undefined/null
+                    else if (a !== undefined && (b === undefined || b === null)) {
+                      diff[k] = { from: a, to: '' };
+                    }
+                  });
+                }
+                const lines = i.action === 'UPDATE' ? toPlainChangeLines(diff, FUEL_OP_LABELS) : [];
+                const expanded = !!foExpanded[idx];
+                return (
+                  <tr key={`${i.id || i.event_ts}-${idx}`}>
+                    <td>{i.username || i.user_id || ''}</td>
+                    <td>{i.tab || ''}</td>
+                    <td>{i.section || ''}</td>
+                    <td>{i.action || ''}</td>
+                    <td>{i.entity_type || ''}</td>
+                    <td>{i.unit_code || ''}</td>
+                    <td>{i.performed_time ? String(i.performed_time).replace('T',' ').slice(0,16) : (i.op_date ? `${i.op_date} 00:00` : '')}</td>
+                    <td>{i.updated_at ? String(i.updated_at).replace('T',' ').slice(0,16) : ''}</td>
+                    <td>{i.amount_liters ?? ''}</td>
+                    <td>{i.meter_reading ?? ''}</td>
+                    <td style={{whiteSpace:'pre-wrap'}}>
+                      {lines.length ? (
+                        <ul style={{margin:'6px 0', paddingLeft:18}}>
+                          {lines.slice(0,5).map((t, j) => <li key={j}>{t}</li>)}
+                        </ul>
+                      ) : '(no changes)'}
+                      {lines.length > 5 && <div className="muted" style={{fontSize:12,marginTop:4}}>+{lines.length-5} more…</div>}
+                    </td>
+                    <td>
+                      <button className="btn" type="button" style={{background:'#eee',color:'#222'}} onClick={() => setFoExpanded(m => ({...m, [idx]: !expanded}))}>{expanded ? 'Hide' : 'View'}</button>
+                      {expanded && (
+                        <div style={{maxWidth:520,maxHeight:260,overflow:'auto',border:'1px solid #eee',borderRadius:6,marginTop:8,padding:6,background:'#fafafa'}}>
+                          {(i.payload_old || i.payload_new) ? (
+                            <>
+                              <div style={{fontWeight:600}}>Old</div>
+                              <pre style={{fontSize:12,whiteSpace:'pre-wrap'}}>{JSON.stringify(i.payload_old || {}, null, 2)}</pre>
+                              <div style={{fontWeight:600, marginTop:8}}>New</div>
+                              <pre style={{fontSize:12,whiteSpace:'pre-wrap'}}>{JSON.stringify(i.payload_new || {}, null, 2)}</pre>
+                            </>
+                          ) : <div className="muted">No payloads</div>}
                         </div>
                       )}
                     </td>

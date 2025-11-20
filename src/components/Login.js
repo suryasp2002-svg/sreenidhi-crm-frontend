@@ -14,11 +14,15 @@ export default function Login({ onAuthed }) {
   const [currentPassword, setCurrentPassword] = useState('');
 
   useEffect(() => {
-    // Check if owner exists to hide/show register option
-    fetch('/api/auth/owner-exists')
-      .then(r => r.json())
-      .then(d => setOwnerExists(!!d.exists))
-      .catch(() => setOwnerExists(true));
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('/api/auth/owner-exists');
+        const d = await r.json().catch(()=>({}));
+        if (!cancelled) setOwnerExists(!!d.exists);
+      } catch { if (!cancelled) setOwnerExists(true); }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   async function submit(e) {
