@@ -309,16 +309,18 @@ export default function Reminders({ perms }) {
         fetchReminders('EMAIL', lf, lt, forUserId, ctrl.signal, assignedToSelfOpts),
         fetchReminders('EMAIL', rf, rt, forUserId, ctrl.signal, assignedToSelfOpts),
         // createdBy=self (only for OWNER/ADMIN)
-        wantCreatedBy ? fetchReminders('CALL', lf, lt, forUserId, ctrl.signal, { createdBySelf: true }) : Promise.resolve([]),
-        wantCreatedBy ? fetchReminders('CALL', rf, rt, forUserId, ctrl.signal, { createdBySelf: true }) : Promise.resolve([]),
-        wantCreatedBy ? fetchReminders('EMAIL', lf, lt, forUserId, ctrl.signal, { createdBySelf: true }) : Promise.resolve([]),
-        wantCreatedBy ? fetchReminders('EMAIL', rf, rt, forUserId, ctrl.signal, { createdBySelf: true }) : Promise.resolve([]),
+        // For created-by-self we only want items that are also assigned to self
+        wantCreatedBy ? fetchReminders('CALL', lf, lt, forUserId, ctrl.signal, { createdBySelf: true, assignedToUserId: selfId }) : Promise.resolve([]),
+        wantCreatedBy ? fetchReminders('CALL', rf, rt, forUserId, ctrl.signal, { createdBySelf: true, assignedToUserId: selfId }) : Promise.resolve([]),
+        wantCreatedBy ? fetchReminders('EMAIL', lf, lt, forUserId, ctrl.signal, { createdBySelf: true, assignedToUserId: selfId }) : Promise.resolve([]),
+        wantCreatedBy ? fetchReminders('EMAIL', rf, rt, forUserId, ctrl.signal, { createdBySelf: true, assignedToUserId: selfId }) : Promise.resolve([]),
         // overdue PENDING (assigned-to-self)
         fetchReminders('CALL', overdueFrom, overdueTo, forUserId, ctrl.signal, { ...assignedToSelfOpts, statusList: ['PENDING'] }),
         fetchReminders('EMAIL', overdueFrom, overdueTo, forUserId, ctrl.signal, { ...assignedToSelfOpts, statusList: ['PENDING'] }),
         // overdue PENDING (created-by-self for OWNER/ADMIN)
-        wantCreatedBy ? fetchReminders('CALL', overdueFrom, overdueTo, forUserId, ctrl.signal, { createdBySelf: true, statusList: ['PENDING'] }) : Promise.resolve([]),
-        wantCreatedBy ? fetchReminders('EMAIL', overdueFrom, overdueTo, forUserId, ctrl.signal, { createdBySelf: true, statusList: ['PENDING'] }) : Promise.resolve([]),
+        // For overdue created-by-self also ensure assignedToUserId=selfId
+        wantCreatedBy ? fetchReminders('CALL', overdueFrom, overdueTo, forUserId, ctrl.signal, { createdBySelf: true, assignedToUserId: selfId, statusList: ['PENDING'] }) : Promise.resolve([]),
+        wantCreatedBy ? fetchReminders('EMAIL', overdueFrom, overdueTo, forUserId, ctrl.signal, { createdBySelf: true, assignedToUserId: selfId, statusList: ['PENDING'] }) : Promise.resolve([]),
         // meetings
         fetchMeetings(lf, lt, 'SCHEDULED,RESCHEDULED', forUserId, ctrl.signal, assignedToSelfOpts),
         fetchMeetings(rf, rt, 'SCHEDULED,RESCHEDULED', forUserId, ctrl.signal, assignedToSelfOpts),
