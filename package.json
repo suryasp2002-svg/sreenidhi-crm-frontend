@@ -1,4 +1,9 @@
 {
+  "name": "sreenidhi-crm-root",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix client run build"
+  },
   "dependencies": {
     "xlsx": "^0.18.5"
   }
