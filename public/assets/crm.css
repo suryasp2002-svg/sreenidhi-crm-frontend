@@ -426,10 +426,12 @@ html, body {
 
 /* Mobile: avoid horizontal-scrolling tabs — wrap them into multiple rows */
 @media (max-width: 768px) {
-  .fo-tabs { overflow-x: visible; flex-wrap: wrap; gap: 10px 12px; }
-  .fo-tab-item { flex: 1 1 calc(50% - 12px); text-align: left; }
-  /* When there are many tabs, allow them to stack full-width for readability */
-  .fo-tabs.long-list .fo-tab-item { flex: 1 1 100%; }
+  /* Stack tabs full-width on mobile for clarity */
+  .fo-tabs { overflow-x: visible; flex-wrap: nowrap; gap: 10px 12px; display:block; }
+  .fo-tabs .fo-tab-item { display:block; width:100%; margin:8px 0; text-align:left; }
+  /* if you want a compact two-column tab layout, add the helper class `.fo-tabs.compact` */
+  .fo-tabs.compact { display:flex; flex-wrap:wrap; }
+  .fo-tabs.compact .fo-tab-item { flex: 1 1 calc(50% - 12px); display:inline-flex; align-items:center; }
   /* Ensure the tab strip doesn't push content horizontally */
   .fo-tabs { padding-left: 0; margin-left: 0; margin-right: 0; }
 }
@@ -446,4 +448,36 @@ html, body {
   .fuel-ops-wrap textarea { font-size: 15px; }
   .fuel-ops-wrap .card { padding-left: 14px; padding-right: 14px; }
 }
+
+/* Ensure large tables inside Fuel Ops wrap and show an internal scrollbar only */
+.fuel-ops-wrap .card table,
+.fuel-ops-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+}
+@media (max-width: 1024px) {
+  .fuel-ops-wrap .card table,
+  .fuel-ops-wrap table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+  .fuel-ops-wrap .card table thead,
+  .fuel-ops-wrap .card table tbody,
+  .fuel-ops-wrap .card table tr,
+  .fuel-ops-wrap .card table th,
+  .fuel-ops-wrap .card table td {
+    display: table-row-group; /* keep table semantics for larger screens */
+  }
+}
+
+/* Tidy card defaults for Fuel Ops to match other modules */
+.fuel-ops-wrap .card { padding: 18px; border-radius: 14px; }
+.fuel-ops-wrap .card h3 { margin-top: 0; }
+
+/* Smaller radius for inputs inside dense table cells */
+.fuel-ops-wrap td input,
+.fuel-ops-wrap td select,
+.fuel-ops-wrap td textarea { border-radius: 8px !important; }
 
