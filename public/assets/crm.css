@@ -340,6 +340,13 @@ html, body {
   padding: 16px 16px 24px;
 }
 
+/* Prevent horizontal overflow inside Fuel Ops and keep content centered */
+.fuel-ops-wrap .card {
+  max-width: calc(100% - 32px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* Tabs: horizontal, scrollable on small screens */
 .fo-tabs {
   display: flex;
@@ -415,5 +422,28 @@ html, body {
   .fo-tabs { padding-left: 0; }
   .card .btn, .wrap button, .fo-grid-4-action > div:last-child > .btn { width: 100%; }
   .fo-tab-item { padding: 10px 16px; font-size: 15px; }
+}
+
+/* Mobile: avoid horizontal-scrolling tabs — wrap them into multiple rows */
+@media (max-width: 768px) {
+  .fo-tabs { overflow-x: visible; flex-wrap: wrap; gap: 10px 12px; }
+  .fo-tab-item { flex: 1 1 calc(50% - 12px); text-align: left; }
+  /* When there are many tabs, allow them to stack full-width for readability */
+  .fo-tabs.long-list .fo-tab-item { flex: 1 1 100%; }
+  /* Ensure the tab strip doesn't push content horizontally */
+  .fo-tabs { padding-left: 0; margin-left: 0; margin-right: 0; }
+}
+
+/* Defensive: ensure no element inside Fuel Ops causes horizontal scroll */
+.fuel-ops-wrap, .fuel-ops-wrap * {
+  box-sizing: border-box;
+}
+
+/* Tighter max-width for large form controls so they don't overflow on narrow devices */
+@media (max-width: 480px) {
+  .fuel-ops-wrap input,
+  .fuel-ops-wrap select,
+  .fuel-ops-wrap textarea { font-size: 15px; }
+  .fuel-ops-wrap .card { padding-left: 14px; padding-right: 14px; }
 }
 
