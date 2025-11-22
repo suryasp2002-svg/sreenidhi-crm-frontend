@@ -334,3 +334,86 @@ html, body {
   border: 0;
   padding: 0;
 }
+
+/* Fuel Ops responsive helpers */
+.fuel-ops-wrap {
+  padding: 16px 16px 24px;
+}
+
+/* Tabs: horizontal, scrollable on small screens */
+.fo-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 6px;
+  margin-bottom: 12px;
+}
+.fo-tabs::-webkit-scrollbar { height: 6px; }
+.fo-tabs::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 99px; }
+.fo-tab-item {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 0;
+  cursor: pointer;
+  background: #f3f4f6;
+  color: #111;
+  font-size: 14px;
+}
+.fo-tab-item.active {
+  background: #111;
+  color: #fff;
+}
+
+/* Table wrapper (only this container may scroll horizontally on mobile) */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent cards from being artificially constrained by inline max-widths */
+.card { max-width: 100% !important; }
+
+/* Fuel Ops: tighten input widths and make corners rounded to match other tabs */
+.fuel-ops-wrap input,
+.fuel-ops-wrap select,
+.fuel-ops-wrap textarea,
+.fuel-ops-wrap input[type="number"],
+.fuel-ops-wrap input[type="date"],
+.fuel-ops-wrap input[type="time"],
+.fuel-ops-wrap input[type="datetime-local"] {
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  padding: 8px 10px !important;
+  box-shadow: none !important;
+  outline: none !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
+
+/* Keep two-column form grid inputs from stretching too wide on desktop */
+.fuel-ops-wrap .form-grid-2 input,
+.fuel-ops-wrap .form-grid-2 select,
+.fuel-ops-wrap .form-grid-2 textarea { max-width: 100%; }
+
+/* Inputs that sit inside table cells should still look rounded but fill their cell */
+.fuel-ops-wrap td input,
+.fuel-ops-wrap td select,
+.fuel-ops-wrap td textarea { border-radius: 10px !important; padding:6px !important; }
+
+/* Preserve mobile behavior: full width on small screens */
+@media (max-width: 768px) {
+  .fuel-ops-wrap input,
+  .fuel-ops-wrap select,
+  .fuel-ops-wrap textarea { width: 100% !important; max-width: none !important; }
+}
+
+/* Ensure primary buttons are full-width on small screens (mobile-first) */
+@media (max-width: 540px) {
+  .fo-tabs { padding-left: 0; }
+  .card .btn, .wrap button, .fo-grid-4-action > div:last-child > .btn { width: 100%; }
+  .fo-tab-item { padding: 10px 16px; font-size: 15px; }
+}
+

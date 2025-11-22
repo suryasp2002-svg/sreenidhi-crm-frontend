@@ -202,7 +202,7 @@ export default function FuelOps({ perms }) {
   const permsProvided = !!perms;
   const canMini = permsProvided ? !!perms?.actions?.['FuelOps.view_mini_stock'] : true;
   return (
-    <div style={{ padding: '24px 0' }}>
+  <div className="fuel-ops-wrap">
       <h2 style={{ margin: 0, fontSize: 20 }}>Fuel Ops</h2>
       <div className="ops-layout" style={{ marginTop: 16 }}>
         <div className="ops-main">
@@ -422,9 +422,9 @@ function SubTabs({ token, units, setUnits, unitId, setUnitId, loadDate, setLoadD
   }, [JSON.stringify(allTabs)]);
   return (
     <div>
-      <div style={{ display:'flex', gap: 8, marginBottom: 12 }}>
+      <div className="fo-tabs">
         {allTabs.map(t => (
-          <button key={t} className={tab===t?'nav-btn active':'nav-btn'} style={{marginRight:8,background:tab===t?'#111':'#f5f5f5',color:tab===t?'#fff':'#222',border:'none',borderRadius:20,padding:'6px 14px',cursor:'pointer'}} onClick={()=>setTab(t)}>{t}</button>
+          <button key={t} className={tab===t ? 'nav-btn active fo-tab-item' : 'nav-btn fo-tab-item'} onClick={()=>setTab(t)}>{t}</button>
         ))}
       </div>
       {tab==='Odometer Readings' && (<>{readingsSection}</>)}
@@ -460,7 +460,7 @@ function SubTabs({ token, units, setUnits, unitId, setUnitId, loadDate, setLoadD
           )}
           <div className="card" style={{ padding: 16, marginTop: 12 }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>Vehicles</div>
-            <div style={{ overflowX:'auto' }}>
+            <div className="table-wrap">
               <table style={{ width:'100%', borderCollapse:'collapse' }}>
                 <thead>
                   <tr style={{ textAlign:'left' }}>
@@ -484,7 +484,7 @@ function SubTabs({ token, units, setUnits, unitId, setUnitId, loadDate, setLoadD
           </div>
               <div className="card" style={{ padding: 16, marginTop: 12 }}>
                 <div style={{ fontWeight: 600, marginBottom: 8 }}>DATUMS and other storages</div>
-                <div style={{ overflowX:'auto' }}>
+                <div className="table-wrap">
                   <table style={{ width:'100%', borderCollapse:'collapse' }}>
                     <thead>
                       <tr style={{ textAlign:'left' }}>
@@ -1533,7 +1533,7 @@ function DayLogsSection({ token, units, refreshStock, drivers, perms }) {
     <div style={{ marginTop:16, maxWidth:900 }}>
       <div style={{ fontWeight:600, marginBottom:8 }}>Recent Day Logs</div>
       {listMsg && (<div style={{ marginBottom:8, color:'#b91c1c' }}>{listMsg}</div>)}
-      <div style={{ overflowX:'auto' }}>
+      <div className="table-wrap">
         <table style={{ width:'100%', borderCollapse:'collapse' }}>
           <thead>
             <tr style={{ textAlign:'left' }}>
@@ -1705,7 +1705,7 @@ function Timeline({ token, dayOps, units, datums, onChanged, perms }) {
   }
 
   return (
-    <div style={{ overflowX:'auto' }}>
+    <div className="table-wrap">
       <table style={{ width:'100%', borderCollapse:'collapse' }}>
         <thead>
           <tr style={{ textAlign:'left' }}>
@@ -1982,7 +1982,7 @@ function PurchaseSection({ token, units, unitId, setUnitId, loadDate, setLoadDat
             <button className="btn ghost" disabled={listLoading} onClick={printLots} style={{ padding:'4px 10px', fontSize:12 }}>Print / PDF</button>
           </div>
         </div>
-        <div style={{ overflowX:'auto' }}>
+        <div className="table-wrap">
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
             <thead>
               <tr style={{ textAlign:'left' }}>
@@ -2391,7 +2391,7 @@ function InternalTransferSection({ token, units, datums, drivers, refreshStock }
             <button className="btn ghost" disabled={listLoading} onClick={printInternalTransfers} style={{ padding:'4px 10px', fontSize:12 }}>Print / PDF</button>
           </div>
         </div>
-        <div style={{ overflowX:'auto' }}>
+        <div className="table-wrap">
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
             <thead>
               <tr style={{ textAlign:'left' }}>
@@ -2659,7 +2659,7 @@ function SaleSection({ token, units, datums, drivers, refreshStock }) {
             <button className="btn ghost" disabled={salesLoading || salesRows.length < parseInt(pageSize,10)} onClick={()=>{ const newPage = page+1; setPage(newPage); reloadSalesList((newPage-1)*parseInt(pageSize,10)); }}>Next</button>
           </div>
         </div>
-        <div style={{ overflowX:'auto' }}>
+        <div className="table-wrap">
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
             <thead>
               <tr style={{ textAlign:'left' }}>
@@ -2837,7 +2837,7 @@ function ReadingsSection({ token, units, unitId, setUnitId, drivers, driverRowId
             } catch { setList([]); } finally { setListLoading(false); }
           }} style={{ padding:'4px 10px', fontSize:12 }}>{listLoading? 'Loading…' : 'Refresh'}</button>
         </div>
-        <div style={{ overflowX:'auto' }}>
+        <div className="table-wrap">
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
             <thead>
               <tr style={{ textAlign:'left' }}>
@@ -3060,7 +3060,7 @@ function RangeReconcile({ token, units }) {
       </div>
       {error && (<div style={{ marginTop:8, color:'#b91c1c' }}>{error}</div>)}
       {rows.length > 0 && (
-        <div style={{ marginTop:12, overflowX:'auto' }}>
+        <div className="table-wrap" style={{ marginTop:12 }}>
           <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
             <thead>
               <tr style={{ background:'#f9fafb' }}>
@@ -3246,7 +3246,7 @@ function DriversList({ token, drivers, setDrivers, perms }) {
   return (
     <div className="card" style={{ padding: 16, marginTop: 12 }}>
       <div style={{ fontWeight: 600, marginBottom: 8 }}>Drivers</div>
-      <div style={{ overflowX:'auto' }}>
+      <div className="table-wrap">
         <table style={{ width:'100%', borderCollapse:'collapse' }}>
           <thead>
             <tr style={{ textAlign:'left' }}>
